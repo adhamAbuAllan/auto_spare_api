@@ -1,0 +1,196 @@
+@baseUrl = http://127.0.0.1:8000
+@contentType = application/json
+
+### Notes
+# To use chained requests, run them in order. 
+# If you want to run any request directly, set the manual IDs below and use the "manual" versions.
+
+@userId = 2
+@partStatusId = 1
+@partRequestId = 1
+@conversationId = 1
+@messageId = 1
+
+### Health
+GET {{baseUrl}}/api/health/
+
+### Auth - Login (JWT)
+# @name login
+POST {{baseUrl}}/api/token/
+Content-Type: {{contentType}}
+
+{
+  "username": "admin",
+  "password": "111111"
+}
+
+### Auth - Refresh (JWT)
+POST {{baseUrl}}/api/token/refresh/
+Content-Type: {{contentType}}
+
+{
+  "refresh": "{{login.response.body.refresh}}"
+}
+
+### Users - Create
+# @name createUser
+POST {{baseUrl}}/api/users/
+Content-Type: {{contentType}}
+
+{
+  "email": "user1@example.com",
+  "username": "user1",
+  "name": "User One",
+  "phone": "+15551234567",
+  "city": "Riyadh",
+  "role": "user",
+  "rating": null,
+  "password": "test1234"
+}
+
+### Users - List
+GET {{baseUrl}}/api/users/
+
+### Spare Parts - Create
+POST {{baseUrl}}/api/spare-parts/
+Content-Type: {{contentType}}
+
+{
+  "name": "Brake Pad2",
+  "description": "Front brake pad2 set",
+  "price": "199.99"
+}
+
+### Spare Parts - List
+GET {{baseUrl}}/api/spare-parts/
+
+### Part Request Status - Create
+# @name createPartStatus
+POST {{baseUrl}}/api/part-request-statuses/
+Content-Type: {{contentType}}
+
+{
+  "code": "open",
+  "label": "Open",
+  "is_terminal": false
+}
+
+### Part Request - Create
+# @name createPartRequest
+POST {{baseUrl}}/api/part-requests/
+Content-Type: {{contentType}}
+
+{
+  "requester": {{userId}},
+  "title": "Need Toyota Corolla 2018 front bumper",
+  "description": "Original part preferred, used is fine.",
+  "status": {{partStatusId}},
+  "city": "Riyadh"
+}
+
+### Part Image - Add (multipart, raw boundary)
+POST {{baseUrl}}/api/part-images/
+Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="part_request"
+
+{{partRequestId}}
+------WebKitFormBoundary7MA4YWxkTrZu0gW
+Content-Disposition: form-data; name="image"; filename="sample_part.jpg"
+Content-Type: image/jpeg
+
+< /Volumes/MyDisk/mac/lib/Projects/DjangoProjects/auto_spare_api/fixtures/sample_part.jpg
+------WebKitFormBoundary7MA4YWxkTrZu0gW--
+
+### Conversation - Create
+# @name createConversation
+POST {{baseUrl}}/api/conversations/
+Content-Type: {{contentType}}
+
+{
+  "title": "Bumper Request Chat"
+}
+
+### Conversation Participant - Add
+# @name addParticipant
+POST {{baseUrl}}/api/conversation-participants/
+Content-Type: {{contentType}}
+
+{
+  "conversation": {{createConversation.response.body.id}},
+  "user": {{createUser.response.body.id}}
+}
+
+### Message - Send (manual)
+# @name createMessage
+POST {{baseUrl}}/api/messages/
+Content-Type: {{contentType}}
+
+{
+  "conversation": {{conversationId}},
+  "sender": {{userId}},
+  "message_type": "text",
+  "text": "Hi, I need the front bumper for Corolla 2018.",
+  "client_timestamp": "2026-03-20T12:00:00Z"
+}
+
+### Message Status - Add
+POST {{baseUrl}}/api/message-statuses/
+Content-Type: {{contentType}}
+
+{
+  "message": {{messageId}},
+  "user": {{userId}},
+  "status": "sent"
+}
+
+### Part Request - Create (manual IDs)
+POST {{baseUrl}}/api/part-requests/
+Content-Type: {{contentType}}
+
+{
+  "requester": {{userId}},
+  "title": "Manual request",
+  "description": "Manual request description",
+  "status": {{partStatusId}},
+  "city": "Riyadh"
+}
+
+### Part Image - Add (manual IDs, multipart)
+POST {{baseUrl}}/api/part-images/
+Content-Type: multipart/form-data
+
+part_request: {{partRequestId}}
+image: @/absolute/path/to/image.jpg
+
+### Conversation Participant - Add (manual IDs)
+POST {{baseUrl}}/api/conversation-participants/
+Content-Type: {{contentType}}
+
+{
+  "conversation": {{conversationId}},
+  "user": {{userId}}
+}
+
+### Message - Send (manual IDs)
+POST {{baseUrl}}/api/messages/
+Content-Type: {{contentType}}
+
+{
+  "conversation": {{conversationId}},
+  "sender": {{userId}},
+  "message_type": "text",
+  "text": "Manual message.",
+  "client_timestamp": "2026-03-20T12:00:00Z"
+}
+
+### Message Status - Add (manual IDs)
+POST {{baseUrl}}/api/message-statuses/
+Content-Type: {{contentType}}
+
+{
+  "message": {{messageId}},
+  "user": {{userId}},
+  "status": "sent"
+}
