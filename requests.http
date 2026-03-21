@@ -5,11 +5,11 @@
 # To use chained requests, run them in order. 
 # If you want to run any request directly, set the manual IDs below and use the "manual" versions.
 
-@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0MDk0NzA0LCJpYXQiOjE3NzQwOTQ0MDQsImp0aSI6IjAwZTU5OWIwNTQzNzQ0ZDg4MDk4MGY1MGNmN2M4ZjQ3IiwidXNlcl9pZCI6IjEifQ.eYiXLfgO-dm9YY_D59mb9mFnyVjrHEF3eYJESXxhdHg
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0MTA5NDI4LCJpYXQiOjE3NzQxMDkxMjgsImp0aSI6IjVlN2MzZTA4YjdlMjRlN2E5MzlkMzBlYjJmZWFmY2MwIiwidXNlcl9pZCI6IjEifQ.nzz3sZd_kuCWucACsfwim-ORIlfjxFKR7HD5_C-0Oes
 @userId = 2
 @partStatusId = 1
 @partRequestId = 1
-@conversationId = 1
+@conversationId = 2
 @messageId = 1
 
 ### Health
