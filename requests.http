@@ -5,6 +5,7 @@
 # To use chained requests, run them in order. 
 # If you want to run any request directly, set the manual IDs below and use the "manual" versions.
 
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0MDk0NzA0LCJpYXQiOjE3NzQwOTQ0MDQsImp0aSI6IjAwZTU5OWIwNTQzNzQ0ZDg4MDk4MGY1MGNmN2M4ZjQ3IiwidXNlcl9pZCI6IjEifQ.eYiXLfgO-dm9YY_D59mb9mFnyVjrHEF3eYJESXxhdHg
 @userId = 2
 @partStatusId = 1
 @partRequestId = 1
@@ -13,6 +14,7 @@
 
 ### Health
 GET {{baseUrl}}/api/health/
+Authorization: Bearer {{accessToken}}
 
 ### Auth - Login (JWT)
 # @name login
@@ -30,6 +32,20 @@ Content-Type: {{contentType}}
 
 {
   "refresh": "{{login.response.body.refresh}}"
+}
+
+### Me - Get Profile
+GET {{baseUrl}}/api/me/
+Authorization: Bearer {{accessToken}}
+
+### Me - Update Profile
+PATCH {{baseUrl}}/api/me/
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "name": "Updated Name",
+  "city": "Riyadh"
 }
 
 ### Users - Create
@@ -50,10 +66,12 @@ Content-Type: {{contentType}}
 
 ### Users - List
 GET {{baseUrl}}/api/users/
+Authorization: Bearer {{accessToken}}
 
 ### Spare Parts - Create
 POST {{baseUrl}}/api/spare-parts/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "name": "Brake Pad2",
@@ -63,11 +81,13 @@ Content-Type: {{contentType}}
 
 ### Spare Parts - List
 GET {{baseUrl}}/api/spare-parts/
+Authorization: Bearer {{accessToken}}
 
 ### Part Request Status - Create
 # @name createPartStatus
 POST {{baseUrl}}/api/part-request-statuses/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "code": "open",
@@ -79,6 +99,7 @@ Content-Type: {{contentType}}
 # @name createPartRequest
 POST {{baseUrl}}/api/part-requests/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "requester": {{userId}},
@@ -91,6 +112,7 @@ Content-Type: {{contentType}}
 ### Part Image - Add (multipart, raw boundary)
 POST {{baseUrl}}/api/part-images/
 Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
+Authorization: Bearer {{accessToken}}
 
 ------WebKitFormBoundary7MA4YWxkTrZu0gW
 Content-Disposition: form-data; name="part_request"
@@ -107,25 +129,27 @@ Content-Type: image/jpeg
 # @name createConversation
 POST {{baseUrl}}/api/conversations/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "title": "Bumper Request Chat"
 }
 
-### Conversation Participant - Add
-# @name addParticipant
+### Conversation Participant - Add (manual IDs)
 POST {{baseUrl}}/api/conversation-participants/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
-  "conversation": {{createConversation.response.body.id}},
-  "user": {{createUser.response.body.id}}
+  "conversation": {{conversationId}},
+  "user": {{userId}}
 }
 
 ### Message - Send (manual)
 # @name createMessage
 POST {{baseUrl}}/api/messages/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "conversation": {{conversationId}},
@@ -138,6 +162,7 @@ Content-Type: {{contentType}}
 ### Message Status - Add
 POST {{baseUrl}}/api/message-statuses/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "message": {{messageId}},
@@ -148,6 +173,7 @@ Content-Type: {{contentType}}
 ### Part Request - Create (manual IDs)
 POST {{baseUrl}}/api/part-requests/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "requester": {{userId}},
@@ -160,6 +186,7 @@ Content-Type: {{contentType}}
 ### Part Image - Add (manual IDs, multipart)
 POST {{baseUrl}}/api/part-images/
 Content-Type: multipart/form-data
+Authorization: Bearer {{accessToken}}
 
 part_request: {{partRequestId}}
 image: @/absolute/path/to/image.jpg
@@ -167,6 +194,7 @@ image: @/absolute/path/to/image.jpg
 ### Conversation Participant - Add (manual IDs)
 POST {{baseUrl}}/api/conversation-participants/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "conversation": {{conversationId}},
@@ -176,6 +204,7 @@ Content-Type: {{contentType}}
 ### Message - Send (manual IDs)
 POST {{baseUrl}}/api/messages/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "conversation": {{conversationId}},
@@ -188,6 +217,7 @@ Content-Type: {{contentType}}
 ### Message Status - Add (manual IDs)
 POST {{baseUrl}}/api/message-statuses/
 Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
 
 {
   "message": {{messageId}},

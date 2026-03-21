@@ -55,6 +55,8 @@ class PartRequest(models.Model):
     )
     title = models.CharField(max_length=255)
     description = models.TextField(blank=True)
+    min_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    max_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.ForeignKey(
         PartRequestStatus, on_delete=models.PROTECT, related_name="part_requests"
     )

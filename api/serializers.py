@@ -34,6 +34,7 @@ class ApiUserSerializer(serializers.ModelSerializer):
             "email",
             "username",
             "name",
+            "avatar",
             "phone",
             "city",
             "role",
@@ -78,6 +79,8 @@ class PartRequestSerializer(serializers.ModelSerializer):
             "requester",
             "title",
             "description",
+            "min_price",
+            "max_price",
             "status",
             "city",
             "created_at",
@@ -125,11 +128,129 @@ class MessageSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "server_timestamp", "is_deleted"]
 
 
+class UserBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApiUser
+        fields = ["id", "name", "avatar"]
+
+
+class ConversationParticipantReadSerializer(serializers.ModelSerializer):
+    user = UserBriefSerializer(read_only=True)
+
+    class Meta:
+        model = ConversationParticipant
+        fields = ["id", "user", "joined_at", "last_read_at"]
+
+
+class ConversationListSerializer(serializers.ModelSerializer):
+    participants = ConversationParticipantReadSerializer(many=True, read_only=True)
+    last_message = serializers.SerializerMethodField()
+    unread_count = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Conversation
+        fields = ["id", "title", "participants", "last_message", "unread_count"]
+
+    def get_last_message(self, obj):
+        if not getattr(obj, "last_message_id", None):
+            return None
+        return {
+            "id": obj.last_message_id,
+            "text": obj.last_message_text,
+            "sender": {
+                "id": obj.last_message_sender_id,
+                "name": obj.last_message_sender_name,
+            },
+            "timestamp": obj.last_message_server_timestamp,
+        }
+
+
 class MessageAttachmentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
     class Meta:
         model = MessageAttachment
-        fields = ["id", "message", "file", "content_type", "size", "created_at"]
+        fields = ["id", "file_url", "content_type", "size", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+    def get_file_url(self, obj):
+        request = self.context.get("request")
+        if not obj.file:
+            return None
+        url = obj.file.url
+        return request.build_absolute_uri(url) if request else url
+
+
+class MessageReplySerializer(serializers.ModelSerializer):
+    sender = UserBriefSerializer(read_only=True)
+
+    class Meta:
+        model = Message
+        fields = ["id", "sender", "text", "client_timestamp", "server_timestamp"]
+
+
+class MessageListSerializer(serializers.ModelSerializer):
+    sender = UserBriefSerializer(read_only=True)
+    reply_to = MessageReplySerializer(read_only=True)
+    media = MessageAttachmentSerializer(source="attachments", many=True, read_only=True)
+
+    class Meta:
+        model = Message
+        fields = [
+            "id",
+            "sender",
+            "message_type",
+            "text",
+            "media",
+            "product",
+            "reply_to",
+            "client_timestamp",
+            "server_timestamp",
+        ]
+
+
+class MessageCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Message
+        fields = [
+            "id",
+            "conversation",
+            "message_type",
+            "text",
+            "product",
+            "reply_to",
+            "client_timestamp",
+        ]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        message_type = attrs.get("message_type", "text")
+        text = attrs.get("text", "").strip()
+        product = attrs.get("product")
+
+        if message_type == "text" and not text:
+            raise serializers.ValidationError({"text": "Text is required for text messages."})
+        if message_type == "product" and not product:
+            raise serializers.ValidationError({"product": "Product is required for product messages."})
+        return attrs
+
+
+class MeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ApiUser
+        fields = [
+            "id",
+            "email",
+            "username",
+            "name",
+            "avatar",
+            "phone",
+            "city",
+            "role",
+            "rating",
+            "created_at",
+        ]
+        read_only_fields = ["id", "email", "username", "role", "rating", "created_at"]
 
 
 class MessageStatusSerializer(serializers.ModelSerializer):
