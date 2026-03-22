@@ -1,35 +1,175 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Chat WebSocket Tester</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 24px;
+      line-height: 1.4;
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      font-weight: 600;
+    }
+    input, textarea, button {
+      font: inherit;
+    }
+    input, textarea {
+      width: 100%;
+      max-width: 900px;
+      padding: 8px;
+      box-sizing: border-box;
+    }
+    textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 12px;
+    }
+    button {
+      padding: 8px 12px;
+      cursor: pointer;
+    }
+    #log {
+      white-space: pre-wrap;
+      background: #111;
+      color: #f3f3f3;
+      padding: 12px;
+      border-radius: 8px;
+      min-height: 240px;
+      max-width: 900px;
+      overflow: auto;
+    }
+    .hint {
+      color: #555;
+      max-width: 900px;
+    }
+  </style>
+</head>
 <body>
-<h2>WebSocket Test</h2>
+  <h1>Chat WebSocket Tester</h1>
+  <p class="hint">
+    Open this file in two browser windows, one per user. Paste a JWT access token for each user,
+    use the same conversation ID, then connect both windows.
+  </p>
 
-<script>
-const token = "PASTE_YOUR_JWT_HERE";
-const conversationId = 2;
+  <label for="socketUrl">WebSocket Base URL</label>
+  <input id="socketUrl" value="ws://127.0.0.1:8000/ws/chat">
 
-const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat/${conversationId}/?token=${token}`);
+  <label for="conversationId">Conversation ID</label>
+  <input id="conversationId" value="2">
 
-ws.onopen = () => {
-    console.log("Connected to WebSocket");
-    ws.send(JSON.stringify({
-        type: "chat.message",
-        text: "Hello from browser",
-        client_timestamp: new Date().toISOString()
-    }));
-};
+  <label for="token">JWT Access Token</label>
+  <textarea id="token" placeholder="Paste the access token returned by /api/token/"></textarea>
 
-ws.onmessage = (event) => {
-    console.log("Message received:", event.data);
-};
+  <div class="row">
+    <button id="connectBtn" type="button">Connect</button>
+    <button id="disconnectBtn" type="button">Disconnect</button>
+    <button id="typingBtn" type="button">Send Typing</button>
+    <button id="seenBtn" type="button">Send Seen</button>
+    <button id="clearBtn" type="button">Clear Log</button>
+  </div>
 
-ws.onclose = () => {
-    console.log("WebSocket closed");
-};
+  <label for="messageText">Message Text</label>
+  <textarea id="messageText">Hello from the browser tester.</textarea>
 
-ws.onerror = (err) => {
-    console.error("WebSocket error:", err);
-};
-</script>
+  <label for="timestamp">Client Timestamp (ISO 8601)</label>
+  <input id="timestamp">
 
+  <div class="row">
+    <button id="sendMessageBtn" type="button">Send Chat Message</button>
+  </div>
+
+  <h2>Log</h2>
+  <div id="log"></div>
+
+  <script>
+    const socketUrlInput = document.getElementById("socketUrl");
+    const conversationIdInput = document.getElementById("conversationId");
+    const tokenInput = document.getElementById("token");
+    const messageTextInput = document.getElementById("messageText");
+    const timestampInput = document.getElementById("timestamp");
+    const logEl = document.getElementById("log");
+
+    let ws = null;
+    timestampInput.value = new Date().toISOString();
+
+    function log(message, data) {
+      const timestamp = new Date().toISOString();
+      const line = data === undefined
+        ? `[${timestamp}] ${message}`
+        : `[${timestamp}] ${message}\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}`;
+      logEl.textContent += `${line}\n\n`;
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function buildUrl() {
+      const base = socketUrlInput.value.replace(/\/$/, "");
+      const conversationId = conversationIdInput.value.trim();
+      const token = encodeURIComponent(tokenInput.value.trim());
+      return `${base}/${conversationId}/?token=${token}`;
+    }
+
+    function sendPayload(payload) {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        log("Cannot send because the socket is not connected.");
+        return;
+      }
+      ws.send(JSON.stringify(payload));
+      log("Sent", payload);
+    }
+
+    document.getElementById("connectBtn").addEventListener("click", () => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        log("Socket is already connected.");
+        return;
+      }
+
+      const url = buildUrl();
+      ws = new WebSocket(url);
+      log("Connecting", url);
+
+      ws.onopen = () => log("Connected");
+      ws.onmessage = (event) => log("Received", event.data);
+      ws.onerror = () => log("Socket error");
+      ws.onclose = (event) => log(`Closed code=${event.code} reason=${event.reason || "(none)"}`);
+    });
+
+    document.getElementById("disconnectBtn").addEventListener("click", () => {
+      if (ws) {
+        ws.close();
+      }
+    });
+
+    document.getElementById("sendMessageBtn").addEventListener("click", () => {
+      sendPayload({
+        type: "chat_message",
+        text: messageTextInput.value,
+        message_type: "text",
+        client_timestamp: timestampInput.value
+      });
+      timestampInput.value = new Date().toISOString();
+    });
+
+    document.getElementById("typingBtn").addEventListener("click", () => {
+      sendPayload({ type: "typing" });
+    });
+
+    document.getElementById("seenBtn").addEventListener("click", () => {
+      sendPayload({ type: "seen" });
+    });
+
+    document.getElementById("clearBtn").addEventListener("click", () => {
+      logEl.textContent = "";
+    });
+  </script>
 </body>
 </html>

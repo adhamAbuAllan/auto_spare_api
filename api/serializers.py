@@ -152,16 +152,16 @@ class ConversationListSerializer(serializers.ModelSerializer):
         fields = ["id", "title", "participants", "last_message", "unread_count"]
 
     def get_last_message(self, obj):
-        if not getattr(obj, "last_message_id", None):
+        if not getattr(obj, "latest_message_id", None):
             return None
         return {
-            "id": obj.last_message_id,
-            "text": obj.last_message_text,
+            "id": obj.latest_message_id,
+            "text": obj.latest_message_text,
             "sender": {
-                "id": obj.last_message_sender_id,
-                "name": obj.last_message_sender_name,
+                "id": obj.latest_message_sender_id,
+                "name": obj.latest_message_sender_name,
             },
-            "timestamp": obj.last_message_server_timestamp,
+            "timestamp": obj.latest_message_server_timestamp,
         }
 
 
