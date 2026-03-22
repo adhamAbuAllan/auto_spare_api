@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h2>WebSocket Test</h2>
+
+<script>
+const token = "PASTE_YOUR_JWT_HERE";
+const conversationId = 2;
+
+const ws = new WebSocket(`ws://127.0.0.1:8000/ws/chat/${conversationId}/?token=${token}`);
+
+ws.onopen = () => {
+    console.log("Connected to WebSocket");
+    ws.send(JSON.stringify({
+        type: "chat.message",
+        text: "Hello from browser",
+        client_timestamp: new Date().toISOString()
+    }));
+};
+
+ws.onmessage = (event) => {
+    console.log("Message received:", event.data);
+};
+
+ws.onclose = () => {
+    console.log("WebSocket closed");
+};
+
+ws.onerror = (err) => {
+    console.error("WebSocket error:", err);
+};
+</script>
+
+</body>
+</html>

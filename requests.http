@@ -1,6 +1,10 @@
 @baseUrl = http://127.0.0.1:8000
 @contentType = application/json
 
+
+@accept = application/json
+
+
 ### Notes
 # To use chained requests, run them in order. 
 # If you want to run any request directly, set the manual IDs below and use the "manual" versions.
@@ -20,6 +24,7 @@ Authorization: Bearer {{accessToken}}
 # @name login
 POST {{baseUrl}}/api/token/
 Content-Type: {{contentType}}
+
 
 {
   "username": "admin",
@@ -52,12 +57,13 @@ Authorization: Bearer {{accessToken}}
 # @name createUser
 POST {{baseUrl}}/api/users/
 Content-Type: {{contentType}}
+Accept: {{accept}}
 
 {
-  "email": "user1@example.com",
-  "username": "user1",
-  "name": "User One",
-  "phone": "+15551234567",
+  "email": "user2@example.com",
+  "username": "user2",
+  "name": "User Two",
+  "phone": "+15551234568",
   "city": "Riyadh",
   "role": "user",
   "rating": null,
