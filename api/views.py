@@ -5,7 +5,7 @@ from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils import timezone
 from rest_framework import mixins, viewsets
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -38,9 +38,11 @@ from .serializers import (
     PartRequestStatusSerializer,
     SparePartSerializer,
 )
+from chat.services import initialize_message_statuses, mark_message_as_latest
 
 
 @api_view(["GET"])
+@permission_classes([AllowAny])
 def health(request):
     return JsonResponse({"status": "ok"})
 
@@ -144,13 +146,13 @@ class ConversationViewSet(
                 last_read_at_coalesced=Coalesce(
                     Subquery(last_read_subquery), Value(epoch)
                 ),
-                last_message_id=Subquery(last_message_subquery.values("id")[:1]),
-                last_message_text=Subquery(last_message_subquery.values("text")[:1]),
-                last_message_sender_id=Subquery(last_message_subquery.values("sender_id")[:1]),
-                last_message_sender_name=Subquery(
+                latest_message_id=Subquery(last_message_subquery.values("id")[:1]),
+                latest_message_text=Subquery(last_message_subquery.values("text")[:1]),
+                latest_message_sender_id=Subquery(last_message_subquery.values("sender_id")[:1]),
+                latest_message_sender_name=Subquery(
                     last_message_subquery.values("sender__name")[:1]
                 ),
-                last_message_server_timestamp=Subquery(
+                latest_message_server_timestamp=Subquery(
                     last_message_subquery.values("server_timestamp")[:1]
                 ),
             )
@@ -249,6 +251,8 @@ class MessageViewSet(
             raise ValidationError({"reply_to": "reply_to must be in the same conversation."})
 
         message = serializer.save(conversation=conversation, sender=self.request.user)
+        mark_message_as_latest(message)
+        initialize_message_statuses(message)
 
         files = self.request.FILES.getlist("files") or []
         if not files and "file" in self.request.FILES:

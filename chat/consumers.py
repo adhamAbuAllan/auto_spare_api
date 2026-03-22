@@ -5,29 +5,32 @@ from channels.generic.websocket import AsyncWebsocketConsumer
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
-from api.models import ConversationParticipant, Message
+from api.models import ConversationParticipant
+from .services import create_message_with_statuses, mark_conversation_seen
 
 
 class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
+        self.group_name = None
         self.user = self.scope.get("user")
+        self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
         if not self.user or self.user.is_anonymous:
-            await self.close()
+            await self.close(code=4401)
             return
 
-        self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
         self.group_name = f"chat_{self.conversation_id}"
 
         is_allowed = await self.is_participant()
         if not is_allowed:
-            await self.close()
+            await self.close(code=4403)
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.accept()
 
     async def disconnect(self, close_code):
-        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        if self.group_name:
+            await self.channel_layer.group_discard(self.group_name, self.channel_name)
 
     async def receive(self, text_data=None, bytes_data=None):
         if not text_data:
@@ -65,14 +68,22 @@ class ChatConsumer(AsyncWebsocketConsumer):
             self.group_name,
             {
                 "type": "handle.chat_message",
-                "id": message.id,
+                "id": message["id"],
                 "conversation_id": int(self.conversation_id),
-                "sender_id": self.user.id,
-                "text": message.text,
-                "client_timestamp": message.client_timestamp.isoformat(),
-                "server_timestamp": message.server_timestamp.isoformat(),
+                "sender_id": message["sender_id"],
+                "text": message["text"],
+                "client_timestamp": message["client_timestamp"],
+                "server_timestamp": message["server_timestamp"],
             },
         )
+        for status_event in message["status_events"]:
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "handle.message_status",
+                    **status_event,
+                },
+            )
 
     async def process_typing(self):
         await self.channel_layer.group_send(
@@ -84,7 +95,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
         )
 
     async def process_seen(self):
-        await self.update_seen()
+        status_events = await self.update_seen()
         await self.channel_layer.group_send(
             self.group_name,
             {
@@ -92,6 +103,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                 "user_id": self.user.id,
             },
         )
+        for status_event in status_events:
+            await self.channel_layer.group_send(
+                self.group_name,
+                {
+                    "type": "handle.message_status",
+                    **status_event,
+                },
+            )
 
     async def handle_chat_message(self, event):
         await self.send(text_data=json.dumps(event))
@@ -102,6 +121,9 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def handle_seen(self, event):
         await self.send(text_data=json.dumps(event))
 
+    async def handle_message_status(self, event):
+        await self.send(text_data=json.dumps(event))
+
     @database_sync_to_async
     def is_participant(self):
         return ConversationParticipant.objects.filter(
@@ -110,16 +132,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     @database_sync_to_async
     def create_message(self, text, message_type, client_timestamp):
-        return Message.objects.create(
+        message_payload, status_events = create_message_with_statuses(
             conversation_id=self.conversation_id,
             sender=self.user,
             text=text,
             message_type=message_type,
             client_timestamp=client_timestamp,
         )
+        message_payload["status_events"] = status_events
+        return message_payload
 
     @database_sync_to_async
     def update_seen(self):
-        ConversationParticipant.objects.filter(
-            conversation_id=self.conversation_id, user=self.user
-        ).update(last_read_at=timezone.now())
+        return mark_conversation_seen(self.conversation_id, self.user)
