@@ -1,36 +1,45 @@
 from urllib.parse import parse_qs
+
 from channels.middleware import BaseMiddleware
 from django.contrib.auth.models import AnonymousUser
-from jwt import decode as jwt_decode
-from django.conf import settings
-from django.contrib.auth import get_user_model
 from asgiref.sync import sync_to_async
-
-User = get_user_model()
+from rest_framework.exceptions import AuthenticationFailed
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 
 @sync_to_async
-def get_user(user_id):
+def authenticate_token(raw_token):
+    authentication = JWTAuthentication()
     try:
-        return User.objects.get(id=user_id)
-    except User.DoesNotExist:
-        return AnonymousUser()
+        validated_token = authentication.get_validated_token(raw_token)
+        return authentication.get_user(validated_token), None
+    except (InvalidToken, TokenError, AuthenticationFailed) as exc:
+        return AnonymousUser(), {
+            "code": exc.__class__.__name__,
+            "detail": str(exc),
+        }
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        return AnonymousUser(), {
+            "code": exc.__class__.__name__,
+            "detail": str(exc),
+        }
 
 
 class JwtAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
         query_string = parse_qs(scope["query_string"].decode())
+        scope["auth_error"] = None
 
         token = query_string.get("token")
         if token:
-            token = token[0]
-            try:
-                decoded = jwt_decode(token, settings.SECRET_KEY, algorithms=["HS256"])
-                scope["user"] = await get_user(decoded["user_id"])
-            except Exception:
-                scope["user"] = AnonymousUser()
+            scope["user"], scope["auth_error"] = await authenticate_token(token[0])
         else:
             scope["user"] = AnonymousUser()
+            scope["auth_error"] = {
+                "code": "MissingToken",
+                "detail": "JWT access token is required in the token query parameter.",
+            }
 
         return await super().__call__(scope, receive, send)
 

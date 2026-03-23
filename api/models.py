@@ -174,11 +174,11 @@ class MessageAttachment(models.Model):
 class MessageStatus(models.Model):
     STATUS_SENT = "sent"
     STATUS_DELIVERED = "delivered"
-    STATUS_READ = "read"
+    STATUS_SEEN = "seen"
     STATUS_CHOICES = [
         (STATUS_SENT, "Sent"),
         (STATUS_DELIVERED, "Delivered"),
-        (STATUS_READ, "Read"),
+        (STATUS_SEEN, "Seen"),
     ]
 
     message = models.ForeignKey(

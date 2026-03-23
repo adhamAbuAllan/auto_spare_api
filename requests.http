@@ -27,8 +27,8 @@ Content-Type: {{contentType}}
 
 
 {
-  "username": "admin",
-  "password": "111111"
+  "username": "user8",
+  "password": "test1234"
 }
 
 ### Auth - Refresh (JWT)
@@ -60,10 +60,10 @@ Content-Type: {{contentType}}
 Accept: {{accept}}
 
 {
-  "email": "user2@example.com",
-  "username": "user2",
-  "name": "User Two",
-  "phone": "+15551234568",
+  "email": "use8@example.com",
+  "username": "user8",
+  "name": "User Eight",
+  "phone": "+15551234574",
   "city": "Riyadh",
   "role": "user",
   "rating": null,

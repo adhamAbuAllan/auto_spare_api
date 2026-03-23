@@ -65,15 +65,17 @@
   <input id="socketUrl" value="ws://127.0.0.1:8000/ws/chat">
 
   <label for="conversationId">Conversation ID</label>
-  <input id="conversationId" value="2">
+  <input id="conversationId" value="1">
 
   <label for="token">JWT Access Token</label>
   <textarea id="token" placeholder="Paste the access token returned by /api/token/"></textarea>
+  <p id="tokenMeta" class="hint">Token info will appear here.</p>
 
   <div class="row">
     <button id="connectBtn" type="button">Connect</button>
     <button id="disconnectBtn" type="button">Disconnect</button>
-    <button id="typingBtn" type="button">Send Typing</button>
+    <button id="typingStartBtn" type="button">Typing Start</button>
+    <button id="typingStopBtn" type="button">Typing Stop</button>
     <button id="seenBtn" type="button">Send Seen</button>
     <button id="clearBtn" type="button">Clear Log</button>
   </div>
@@ -81,8 +83,26 @@
   <label for="messageText">Message Text</label>
   <textarea id="messageText">Hello from the browser tester.</textarea>
 
+  <label for="messageType">Message Type</label>
+  <input id="messageType" value="text">
+
+  <label for="productId">Product ID (for product messages)</label>
+  <input id="productId" placeholder="Optional part request id">
+
+  <label for="replyToId">Reply To Message ID</label>
+  <input id="replyToId" placeholder="Optional reply target id">
+
   <label for="timestamp">Client Timestamp (ISO 8601)</label>
   <input id="timestamp">
+
+  <label for="mediaName">Media File Name (base64 socket upload)</label>
+  <input id="mediaName" value="chat-note.txt">
+
+  <label for="mediaContentType">Media Content Type</label>
+  <input id="mediaContentType" value="text/plain">
+
+  <label for="mediaBase64">Media File Base64 (only for media messages)</label>
+  <textarea id="mediaBase64" placeholder="Optional base64 content for media websocket messages"></textarea>
 
   <div class="row">
     <button id="sendMessageBtn" type="button">Send Chat Message</button>
@@ -96,7 +116,14 @@
     const conversationIdInput = document.getElementById("conversationId");
     const tokenInput = document.getElementById("token");
     const messageTextInput = document.getElementById("messageText");
+    const messageTypeInput = document.getElementById("messageType");
+    const productIdInput = document.getElementById("productId");
+    const replyToIdInput = document.getElementById("replyToId");
     const timestampInput = document.getElementById("timestamp");
+    const mediaNameInput = document.getElementById("mediaName");
+    const mediaContentTypeInput = document.getElementById("mediaContentType");
+    const mediaBase64Input = document.getElementById("mediaBase64");
+    const tokenMetaEl = document.getElementById("tokenMeta");
     const logEl = document.getElementById("log");
 
     let ws = null;
@@ -109,6 +136,44 @@
         : `[${timestamp}] ${message}\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}`;
       logEl.textContent += `${line}\n\n`;
       logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function decodeJwtPayload(token) {
+      const parts = token.split(".");
+      if (parts.length !== 3) {
+        return null;
+      }
+      try {
+        const normalized = parts[1].replace(/-/g, "+").replace(/_/g, "/");
+        const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+        return JSON.parse(atob(padded));
+      } catch (error) {
+        return null;
+      }
+    }
+
+    function refreshTokenMeta() {
+      const token = tokenInput.value.trim();
+      if (!token) {
+        tokenMetaEl.textContent = "Token info will appear here.";
+        return;
+      }
+
+      const payload = decodeJwtPayload(token);
+      if (!payload) {
+        tokenMetaEl.textContent = "Token could not be decoded. Check for truncation or extra spaces.";
+        return;
+      }
+
+      const issuedAt = payload.iat ? new Date(payload.iat * 1000) : null;
+      const expiresAt = payload.exp ? new Date(payload.exp * 1000) : null;
+      const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() : false;
+      tokenMetaEl.textContent = [
+        `user_id=${payload.user_id ?? "(missing)"}`,
+        issuedAt ? `issued=${issuedAt.toISOString()}` : "issued=(missing)",
+        expiresAt ? `expires=${expiresAt.toISOString()}` : "expires=(missing)",
+        `status=${isExpired ? "expired" : "usable"}`
+      ].join(" | ");
     }
 
     function buildUrl() {
@@ -134,13 +199,22 @@
       }
 
       const url = buildUrl();
+      const payload = decodeJwtPayload(tokenInput.value.trim());
+      if (payload?.exp && payload.exp * 1000 <= Date.now()) {
+        log("Token is already expired. Generate a fresh JWT before connecting.");
+      }
       ws = new WebSocket(url);
       log("Connecting", url);
 
       ws.onopen = () => log("Connected");
       ws.onmessage = (event) => log("Received", event.data);
       ws.onerror = () => log("Socket error");
-      ws.onclose = (event) => log(`Closed code=${event.code} reason=${event.reason || "(none)"}`);
+      ws.onclose = (event) => {
+        log(`Closed code=${event.code} reason=${event.reason || "(none)"}`);
+        if (event.code === 1006) {
+          log("Hint", "Code 1006 usually means the handshake failed. Common causes: expired token, wrong conversation id, user not in the conversation, or server/Redis not running.");
+        }
+      };
     });
 
     document.getElementById("disconnectBtn").addEventListener("click", () => {
@@ -150,17 +224,43 @@
     });
 
     document.getElementById("sendMessageBtn").addEventListener("click", () => {
-      sendPayload({
+      const payload = {
         type: "chat_message",
         text: messageTextInput.value,
-        message_type: "text",
+        message_type: messageTypeInput.value.trim() || "text",
         client_timestamp: timestampInput.value
-      });
+      };
+
+      const productId = productIdInput.value.trim();
+      const replyToId = replyToIdInput.value.trim();
+      const mediaBase64 = mediaBase64Input.value.trim();
+
+      if (productId) {
+        payload.product_id = Number(productId);
+      }
+      if (replyToId) {
+        payload.reply_to_id = Number(replyToId);
+      }
+      if (payload.message_type === "media" && mediaBase64) {
+        payload.media_files = [
+          {
+            name: mediaNameInput.value.trim() || "upload.txt",
+            content_type: mediaContentTypeInput.value.trim() || "application/octet-stream",
+            data_base64: mediaBase64
+          }
+        ];
+      }
+
+      sendPayload(payload);
       timestampInput.value = new Date().toISOString();
     });
 
-    document.getElementById("typingBtn").addEventListener("click", () => {
-      sendPayload({ type: "typing" });
+    document.getElementById("typingStartBtn").addEventListener("click", () => {
+      sendPayload({ type: "typing_start" });
+    });
+
+    document.getElementById("typingStopBtn").addEventListener("click", () => {
+      sendPayload({ type: "typing_stop" });
     });
 
     document.getElementById("seenBtn").addEventListener("click", () => {
@@ -170,6 +270,9 @@
     document.getElementById("clearBtn").addEventListener("click", () => {
       logEl.textContent = "";
     });
+
+    tokenInput.addEventListener("input", refreshTokenMeta);
+    refreshTokenMeta();
   </script>
 </body>
 </html>

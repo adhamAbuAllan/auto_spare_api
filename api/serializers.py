@@ -183,21 +183,59 @@ class MessageAttachmentSerializer(serializers.ModelSerializer):
 
 class MessageReplySerializer(serializers.ModelSerializer):
     sender = UserBriefSerializer(read_only=True)
-
-    class Meta:
-        model = Message
-        fields = ["id", "sender", "text", "client_timestamp", "server_timestamp"]
-
-
-class MessageListSerializer(serializers.ModelSerializer):
-    sender = UserBriefSerializer(read_only=True)
-    reply_to = MessageReplySerializer(read_only=True)
-    media = MessageAttachmentSerializer(source="attachments", many=True, read_only=True)
+    product = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = [
             "id",
+            "sender",
+            "text",
+            "product",
+            "client_timestamp",
+            "server_timestamp",
+        ]
+
+    def get_product(self, obj):
+        if not obj.product:
+            return None
+        return {
+            "id": obj.product.id,
+            "title": obj.product.title,
+            "min_price": obj.product.min_price,
+            "max_price": obj.product.max_price,
+        }
+
+
+class PartRequestBriefSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PartRequest
+        fields = ["id", "title", "min_price", "max_price"]
+
+
+class MessageStatusReadSerializer(serializers.ModelSerializer):
+    conversation_id = serializers.IntegerField(source="message.conversation_id", read_only=True)
+    message_id = serializers.IntegerField(source="message_id", read_only=True)
+    user_id = serializers.IntegerField(source="user_id", read_only=True)
+
+    class Meta:
+        model = MessageStatus
+        fields = ["conversation_id", "message_id", "user_id", "status", "updated_at"]
+
+
+class MessageListSerializer(serializers.ModelSerializer):
+    conversation_id = serializers.IntegerField(read_only=True)
+    sender = UserBriefSerializer(read_only=True)
+    product = PartRequestBriefSerializer(read_only=True)
+    reply_to = MessageReplySerializer(read_only=True)
+    media = MessageAttachmentSerializer(source="attachments", many=True, read_only=True)
+    statuses = MessageStatusReadSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = Message
+        fields = [
+            "id",
+            "conversation_id",
             "sender",
             "message_type",
             "text",
@@ -206,6 +244,7 @@ class MessageListSerializer(serializers.ModelSerializer):
             "reply_to",
             "client_timestamp",
             "server_timestamp",
+            "statuses",
         ]
 
 

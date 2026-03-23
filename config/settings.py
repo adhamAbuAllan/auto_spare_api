@@ -194,3 +194,17 @@ REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "api.pagination.DefaultPagination",
     "PAGE_SIZE": 20,
 }
+
+SIMPLE_JWT = {
+    "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
+}
+
+CHAT_MAX_MEDIA_BYTES = int(os.getenv("CHAT_MAX_MEDIA_BYTES", str(5 * 1024 * 1024)))
+CHAT_ALLOWED_MEDIA_TYPES = tuple(
+    item.strip()
+    for item in os.getenv(
+        "CHAT_ALLOWED_MEDIA_TYPES",
+        "text/plain,image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4,audio/mpeg,audio/ogg",
+    ).split(",")
+    if item.strip()
+)

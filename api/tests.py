@@ -221,6 +221,8 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(len(payload["results"]), 2)
         self.assertEqual(payload["results"][0]["text"], "Hi, I need the front bumper.")
         self.assertEqual(payload["results"][1]["text"], "I can help with that.")
+        self.assertEqual(payload["results"][0]["conversation_id"], self.conversation.id)
+        self.assertEqual(payload["results"][0]["statuses"], [])
 
     def test_http_message_create_initializes_receipt_statuses(self):
         response = self.client.post(
@@ -235,7 +237,13 @@ class ConversationApiTests(ApiTestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        message = Message.objects.get(pk=response.json()["id"])
+        payload = response.json()
+        self.assertEqual(payload["conversation_id"], self.conversation.id)
+        self.assertEqual(payload["sender"]["id"], self.buyer.id)
+        self.assertEqual(payload["message_type"], "text")
+        self.assertEqual(len(payload["statuses"]), 2)
+
+        message = Message.objects.get(pk=payload["id"])
         self.assertEqual(
             set(message.statuses.values_list("user_id", "status")),
             {
@@ -243,3 +251,94 @@ class ConversationApiTests(ApiTestCase):
                 (self.seller.id, MessageStatus.STATUS_DELIVERED),
             },
         )
+
+    def test_http_product_message_returns_product_payload(self):
+        product_status = PartRequestStatus.objects.create(
+            code="available",
+            label="Available",
+            is_terminal=False,
+        )
+        product = PartRequest.objects.create(
+            requester=self.seller,
+            title="OEM grille",
+            description="Clean condition",
+            min_price="200.00",
+            max_price="350.00",
+            status=product_status,
+            city="Riyadh",
+        )
+
+        response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "product",
+                "product": product.id,
+                "client_timestamp": "2026-03-23T10:10:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["product"]["id"], product.id)
+        self.assertEqual(response.json()["product"]["title"], "OEM grille")
+
+    def test_http_reply_message_rejects_cross_conversation_reply_to(self):
+        other_conversation = Conversation.objects.create(title="Other")
+        ConversationParticipant.objects.create(conversation=other_conversation, user=self.buyer)
+        other_message = Message.objects.create(
+            conversation=other_conversation,
+            sender=self.buyer,
+            message_type="text",
+            text="Elsewhere",
+            client_timestamp=timezone.now(),
+        )
+
+        response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "text",
+                "text": "Wrong reply",
+                "reply_to": other_message.id,
+                "client_timestamp": "2026-03-23T10:11:00Z",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("reply_to", response.json())
+
+    def test_http_media_message_requires_file_and_returns_media(self):
+        missing_file_response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "media",
+                "client_timestamp": "2026-03-23T10:12:00Z",
+            },
+            format="multipart",
+        )
+        self.assertEqual(missing_file_response.status_code, 400)
+        self.assertIn("files", missing_file_response.json())
+
+        upload = SimpleUploadedFile(
+            "chat-note.txt",
+            b"socket fallback media",
+            content_type="text/plain",
+        )
+        response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "media",
+                "client_timestamp": "2026-03-23T10:13:00Z",
+                "files": [upload],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["message_type"], "media")
+        self.assertEqual(len(response.json()["media"]), 1)
+        self.assertEqual(response.json()["media"][0]["content_type"], "text/plain")

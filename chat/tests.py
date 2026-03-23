@@ -1,3 +1,5 @@
+import base64
+
 from asgiref.sync import async_to_sync
 from channels.testing import WebsocketCommunicator
 from django.test import TransactionTestCase, override_settings
@@ -9,6 +11,8 @@ from api.models import (
     ConversationParticipant,
     Message,
     MessageStatus,
+    PartRequest,
+    PartRequestStatus,
 )
 from config.asgi import application
 
@@ -20,7 +24,7 @@ TEST_CHANNEL_LAYERS = {
 }
 
 
-@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS)
+@override_settings(CHANNEL_LAYERS=TEST_CHANNEL_LAYERS, CHANNEL_LAYER_BACKEND="memory")
 class ChatConsumerTests(TransactionTestCase):
     reset_sequences = True
 
@@ -44,6 +48,20 @@ class ChatConsumerTests(TransactionTestCase):
             name="Outsider",
             password="test1234",
         )
+        self.status = PartRequestStatus.objects.create(
+            code="open",
+            label="Open",
+            is_terminal=False,
+        )
+        self.product = PartRequest.objects.create(
+            requester=self.buyer,
+            title="Front bumper",
+            description="OEM preferred",
+            min_price="100.00",
+            max_price="250.00",
+            status=self.status,
+            city="Riyadh",
+        )
         self.conversation = Conversation.objects.create(title="Socket Test")
         ConversationParticipant.objects.create(
             conversation=self.conversation,
@@ -64,25 +82,40 @@ class ChatConsumerTests(TransactionTestCase):
     async def _connect(self, path):
         communicator = WebsocketCommunicator(application, path)
         connected, _ = await communicator.connect()
-        return communicator, connected
+        initial_state = None
+        if connected:
+            initial_state = await communicator.receive_json_from()
+        return communicator, connected, initial_state
+
+    async def _receive_many(self, communicator, count):
+        events = []
+        for _ in range(count):
+            events.append(await communicator.receive_json_from())
+        return events
 
     def test_participant_can_connect(self):
         async def scenario():
-            communicator, connected = await self._connect(self._build_path(user=self.buyer))
+            communicator, connected, initial_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
             self.assertTrue(connected)
+            self.assertEqual(initial_state["type"], "conversation.state")
+            self.assertEqual(initial_state["conversation_id"], self.conversation.id)
+            self.assertEqual(initial_state["connected_user_ids"], [self.buyer.id])
+            self.assertEqual(initial_state["typing_user_ids"], [])
             await communicator.disconnect()
 
         async_to_sync(scenario)()
 
     def test_non_participant_and_invalid_token_are_rejected(self):
         async def scenario():
-            outsider_communicator, outsider_connected = await self._connect(
+            outsider_communicator, outsider_connected, _ = await self._connect(
                 self._build_path(user=self.outsider)
             )
             self.assertFalse(outsider_connected)
             await outsider_communicator.wait()
 
-            invalid_communicator, invalid_connected = await self._connect(
+            invalid_communicator, invalid_connected, _ = await self._connect(
                 self._build_path(token="not-a-valid-token")
             )
             self.assertFalse(invalid_connected)
@@ -90,16 +123,78 @@ class ChatConsumerTests(TransactionTestCase):
 
         async_to_sync(scenario)()
 
-    def test_chat_message_broadcasts_and_persists(self):
+    def test_invalid_json_and_unsupported_event_return_error(self):
         async def scenario():
-            buyer_communicator, buyer_connected = await self._connect(
+            communicator, connected, _ = await self._connect(self._build_path(user=self.buyer))
+            self.assertTrue(connected)
+            try:
+                await communicator.send_to(text_data="not-json")
+                invalid_json_event = await communicator.receive_json_from()
+                await communicator.send_json_to({"type": "unknown_event"})
+                unsupported_event = await communicator.receive_json_from()
+                return invalid_json_event, unsupported_event
+            finally:
+                await communicator.disconnect()
+
+        invalid_json_event, unsupported_event = async_to_sync(scenario)()
+        self.assertEqual(invalid_json_event["type"], "error")
+        self.assertIn("valid JSON", invalid_json_event["detail"])
+        self.assertEqual(unsupported_event["type"], "error")
+        self.assertIn("Unsupported event type", unsupported_event["detail"])
+
+    def test_invalid_product_id_and_invalid_media_payload_return_error(self):
+        async def scenario():
+            communicator, connected, _ = await self._connect(self._build_path(user=self.buyer))
+            self.assertTrue(connected)
+            try:
+                await communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "product",
+                        "product_id": 999999,
+                        "client_timestamp": "2026-03-23T10:00:00Z",
+                    }
+                )
+                invalid_product_event = await communicator.receive_json_from()
+                await communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "media",
+                        "client_timestamp": "2026-03-23T10:03:00Z",
+                        "media_files": [
+                            {
+                                "name": "bad.bin",
+                                "content_type": "application/octet-stream",
+                                "data_base64": "%%%not-base64%%%",
+                            }
+                        ],
+                    }
+                )
+                invalid_media_event = await communicator.receive_json_from()
+                return invalid_product_event, invalid_media_event
+            finally:
+                await communicator.disconnect()
+
+        invalid_product_event, invalid_media_event = async_to_sync(scenario)()
+        self.assertEqual(invalid_product_event["type"], "error")
+        self.assertIn("product_id", invalid_product_event["detail"])
+        self.assertEqual(invalid_media_event["type"], "error")
+        self.assertIn("valid base64", invalid_media_event["detail"])
+
+    def test_chat_message_broadcasts_normalized_events_and_persists(self):
+        async def scenario():
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
                 self._build_path(user=self.buyer)
             )
-            seller_communicator, seller_connected = await self._connect(
+            seller_communicator, seller_connected, seller_state = await self._connect(
                 self._build_path(user=self.seller)
             )
             self.assertTrue(buyer_connected)
             self.assertTrue(seller_connected)
+            self.assertEqual(buyer_state["type"], "conversation.state")
+            self.assertEqual(seller_state["type"], "conversation.state")
+            self.assertEqual(buyer_state["connected_user_ids"], [self.buyer.id])
+            self.assertEqual(seller_state["connected_user_ids"], [self.buyer.id, self.seller.id])
 
             try:
                 payload = {
@@ -109,16 +204,8 @@ class ChatConsumerTests(TransactionTestCase):
                     "client_timestamp": "2026-03-23T10:00:00Z",
                 }
                 await buyer_communicator.send_json_to(payload)
-                buyer_events = [
-                    await buyer_communicator.receive_json_from(),
-                    await buyer_communicator.receive_json_from(),
-                    await buyer_communicator.receive_json_from(),
-                ]
-                seller_events = [
-                    await seller_communicator.receive_json_from(),
-                    await seller_communicator.receive_json_from(),
-                    await seller_communicator.receive_json_from(),
-                ]
+                buyer_events = await self._receive_many(buyer_communicator, 3)
+                seller_events = await self._receive_many(seller_communicator, 3)
                 return buyer_events, seller_events
             finally:
                 await buyer_communicator.disconnect()
@@ -128,16 +215,16 @@ class ChatConsumerTests(TransactionTestCase):
         buyer_event = buyer_events[0]
         seller_event = seller_events[0]
 
-        self.assertEqual(buyer_event["type"], "handle.chat_message")
-        self.assertEqual(seller_event["type"], "handle.chat_message")
-        self.assertEqual(buyer_event["text"], "Hello over websocket")
-        self.assertEqual(seller_event["text"], "Hello over websocket")
-        self.assertEqual(buyer_event["sender_id"], self.buyer.id)
-        self.assertEqual(seller_event["sender_id"], self.buyer.id)
-        self.assertEqual(buyer_event["conversation_id"], self.conversation.id)
-        self.assertEqual(seller_event["conversation_id"], self.conversation.id)
+        self.assertEqual(buyer_event["type"], "message.created")
+        self.assertEqual(seller_event["type"], "message.created")
+        self.assertEqual(buyer_event["message"]["text"], "Hello over websocket")
+        self.assertEqual(seller_event["message"]["text"], "Hello over websocket")
+        self.assertEqual(buyer_event["message"]["sender"]["id"], self.buyer.id)
+        self.assertEqual(seller_event["message"]["sender"]["id"], self.buyer.id)
+        self.assertEqual(buyer_event["message"]["conversation_id"], self.conversation.id)
+        self.assertEqual(seller_event["message"]["conversation_id"], self.conversation.id)
 
-        message = Message.objects.get(pk=buyer_event["id"])
+        message = Message.objects.get(pk=buyer_event["message"]["id"])
         self.assertEqual(message.sender_id, self.buyer.id)
         self.assertEqual(message.conversation_id, self.conversation.id)
         self.assertEqual(message.text, "Hello over websocket")
@@ -157,24 +244,223 @@ class ChatConsumerTests(TransactionTestCase):
             {MessageStatus.STATUS_SENT, MessageStatus.STATUS_DELIVERED},
         )
         self.assertEqual(
-            {event["status"] for event in seller_statuses},
-            {MessageStatus.STATUS_SENT, MessageStatus.STATUS_DELIVERED},
+            {event["type"] for event in buyer_statuses},
+            {"message.status"},
         )
         self.assertEqual(
             {event["user_id"] for event in buyer_statuses},
             {self.buyer.id, self.seller.id},
         )
         self.assertEqual(
-            {event["type"] for event in buyer_statuses},
-            {"handle.message_status"},
+            {event["type"] for event in seller_statuses},
+            {"message.status"},
         )
 
-    def test_seen_updates_last_read_and_broadcasts_read_receipts(self):
+    def test_product_reply_and_media_payloads_are_accepted(self):
+        async def scenario():
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
+            seller_communicator, seller_connected, seller_state = await self._connect(
+                self._build_path(user=self.seller)
+            )
+            self.assertTrue(buyer_connected)
+            self.assertTrue(seller_connected)
+            self.assertEqual(buyer_state["type"], "conversation.state")
+            self.assertEqual(seller_state["type"], "conversation.state")
+
+            try:
+                await seller_communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "text",
+                        "text": "Original message",
+                        "client_timestamp": "2026-03-23T09:55:00Z",
+                    }
+                )
+                reply_source_events = await self._receive_many(seller_communicator, 3)
+                await self._receive_many(buyer_communicator, 3)
+                reply_source_id = reply_source_events[0]["message"]["id"]
+
+                await buyer_communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "product",
+                        "product_id": self.product.id,
+                        "client_timestamp": "2026-03-23T10:01:00Z",
+                    }
+                )
+                product_events = await self._receive_many(buyer_communicator, 3)
+                await self._receive_many(seller_communicator, 3)
+
+                await buyer_communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "text",
+                        "text": "Replying now",
+                        "reply_to_id": reply_source_id,
+                        "client_timestamp": "2026-03-23T10:02:00Z",
+                    }
+                )
+                reply_events = await self._receive_many(buyer_communicator, 3)
+                await self._receive_many(seller_communicator, 3)
+
+                await buyer_communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "media",
+                        "client_timestamp": "2026-03-23T10:03:00Z",
+                        "media_files": [
+                            {
+                                "name": "hello.txt",
+                                "content_type": "text/plain",
+                                "data_base64": base64.b64encode(b"hello websocket media").decode(),
+                            }
+                        ],
+                    }
+                )
+                media_events = await self._receive_many(buyer_communicator, 3)
+                await self._receive_many(seller_communicator, 3)
+                return product_events[0], reply_events[0], media_events[0]
+            finally:
+                await buyer_communicator.disconnect()
+                await seller_communicator.disconnect()
+
+        product_event, reply_event, media_event = async_to_sync(scenario)()
+
+        self.assertEqual(product_event["type"], "message.created")
+        self.assertEqual(product_event["message"]["message_type"], "product")
+        self.assertEqual(product_event["message"]["product"]["id"], self.product.id)
+        self.assertIsNone(product_event["message"]["reply_to"])
+
+        self.assertEqual(reply_event["type"], "message.created")
+        self.assertEqual(reply_event["message"]["reply_to"]["text"], "Original message")
+        self.assertEqual(reply_event["message"]["reply_to"]["sender"]["id"], self.seller.id)
+
+        self.assertEqual(media_event["type"], "message.created")
+        self.assertEqual(media_event["message"]["message_type"], "media")
+        self.assertEqual(len(media_event["message"]["media"]), 1)
+        self.assertEqual(media_event["message"]["media"][0]["content_type"], "text/plain")
+
+    def test_typing_start_and_stop_broadcast(self):
+        async def scenario():
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
+            seller_communicator, seller_connected, seller_state = await self._connect(
+                self._build_path(user=self.seller)
+            )
+            self.assertTrue(buyer_connected)
+            self.assertTrue(seller_connected)
+            self.assertEqual(buyer_state["type"], "conversation.state")
+            self.assertEqual(seller_state["type"], "conversation.state")
+
+            try:
+                await seller_communicator.send_json_to({"type": "typing_start"})
+                start_events = [
+                    await buyer_communicator.receive_json_from(),
+                    await seller_communicator.receive_json_from(),
+                ]
+                await seller_communicator.send_json_to({"type": "typing_stop"})
+                stop_events = [
+                    await buyer_communicator.receive_json_from(),
+                    await seller_communicator.receive_json_from(),
+                ]
+                return start_events, stop_events
+            finally:
+                await buyer_communicator.disconnect()
+                await seller_communicator.disconnect()
+
+        start_events, stop_events = async_to_sync(scenario)()
+
+        self.assertEqual(start_events[0]["type"], "conversation.typing")
+        self.assertEqual(start_events[0]["user_id"], self.seller.id)
+        self.assertTrue(start_events[0]["is_typing"])
+        self.assertEqual(start_events[1]["type"], "conversation.typing")
+        self.assertEqual(stop_events[0]["type"], "conversation.typing")
+        self.assertFalse(stop_events[0]["is_typing"])
+        self.assertEqual(stop_events[1]["type"], "conversation.typing")
+
+    def test_disconnect_clears_typing_state(self):
+        async def scenario():
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
+            seller_communicator, seller_connected, seller_state = await self._connect(
+                self._build_path(user=self.seller)
+            )
+            self.assertTrue(buyer_connected)
+            self.assertTrue(seller_connected)
+            self.assertEqual(buyer_state["type"], "conversation.state")
+            self.assertEqual(seller_state["type"], "conversation.state")
+
+            try:
+                await seller_communicator.send_json_to({"type": "typing_start"})
+                await buyer_communicator.receive_json_from()
+                await seller_communicator.receive_json_from()
+                await seller_communicator.disconnect()
+                return await buyer_communicator.receive_json_from()
+            finally:
+                await buyer_communicator.disconnect()
+
+        disconnect_event = async_to_sync(scenario)()
+        self.assertEqual(disconnect_event["type"], "conversation.typing")
+        self.assertEqual(disconnect_event["user_id"], self.seller.id)
+        self.assertFalse(disconnect_event["is_typing"])
+
+    def test_one_disconnect_does_not_remove_multi_tab_presence(self):
+        async def scenario():
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
+            seller_communicator_one, seller_one_connected, seller_one_state = await self._connect(
+                self._build_path(user=self.seller)
+            )
+            seller_communicator_two, seller_two_connected, seller_two_state = await self._connect(
+                self._build_path(user=self.seller)
+            )
+            self.assertTrue(buyer_connected)
+            self.assertTrue(seller_one_connected)
+            self.assertTrue(seller_two_connected)
+            self.assertEqual(buyer_state["type"], "conversation.state")
+            self.assertEqual(seller_one_state["type"], "conversation.state")
+            self.assertEqual(seller_two_state["type"], "conversation.state")
+
+            try:
+                await seller_communicator_one.disconnect()
+                await buyer_communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "text": "Still delivered after one tab closes",
+                        "message_type": "text",
+                        "client_timestamp": "2026-03-23T11:00:00Z",
+                    }
+                )
+                buyer_events = await self._receive_many(buyer_communicator, 3)
+                seller_events = await self._receive_many(seller_communicator_two, 3)
+                return buyer_events, seller_events
+            finally:
+                await buyer_communicator.disconnect()
+                await seller_communicator_two.disconnect()
+
+        buyer_events, seller_events = async_to_sync(scenario)()
+        self.assertEqual(buyer_events[0]["type"], "message.created")
+        self.assertEqual(seller_events[0]["type"], "message.created")
+        self.assertEqual(
+            {event["status"] for event in buyer_events[1:]},
+            {MessageStatus.STATUS_SENT, MessageStatus.STATUS_DELIVERED},
+        )
+        self.assertEqual(
+            {event["status"] for event in seller_events[1:]},
+            {MessageStatus.STATUS_SENT, MessageStatus.STATUS_DELIVERED},
+        )
+
+    def test_seen_updates_last_read_and_broadcasts_seen_receipts(self):
         message = Message.objects.create(
             conversation=self.conversation,
             sender=self.buyer,
             message_type="text",
-            text="Mark this as read",
+            text="Mark this as seen",
             client_timestamp="2026-03-23T10:00:00Z",
         )
         MessageStatus.objects.create(
@@ -182,49 +468,52 @@ class ChatConsumerTests(TransactionTestCase):
             user=self.buyer,
             status=MessageStatus.STATUS_SENT,
         )
-        MessageStatus.objects.create(
-            message=message,
-            user=self.seller,
-            status=MessageStatus.STATUS_DELIVERED,
-        )
 
         async def scenario():
-            buyer_communicator, buyer_connected = await self._connect(
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
                 self._build_path(user=self.buyer)
             )
-            seller_communicator, seller_connected = await self._connect(
+            seller_communicator, seller_connected, seller_state = await self._connect(
                 self._build_path(user=self.seller)
             )
             self.assertTrue(buyer_connected)
             self.assertTrue(seller_connected)
+            self.assertEqual(buyer_state["type"], "conversation.state")
+            self.assertEqual(seller_state["type"], "conversation.state")
 
             try:
+                connect_events = [
+                    await buyer_communicator.receive_json_from(),
+                    await seller_communicator.receive_json_from(),
+                ]
                 await seller_communicator.send_json_to({"type": "seen"})
-                buyer_events = [
+                seen_events = [
                     await buyer_communicator.receive_json_from(),
                     await buyer_communicator.receive_json_from(),
-                ]
-                seller_events = [
                     await seller_communicator.receive_json_from(),
                     await seller_communicator.receive_json_from(),
                 ]
-                return buyer_events, seller_events
+                return connect_events, seen_events
             finally:
                 await buyer_communicator.disconnect()
                 await seller_communicator.disconnect()
 
-        buyer_events, seller_events = async_to_sync(scenario)()
+        connect_events, seen_events = async_to_sync(scenario)()
+        self.assertEqual(connect_events[0]["type"], "message.status")
+        self.assertEqual(connect_events[0]["status"], MessageStatus.STATUS_DELIVERED)
+        self.assertEqual(connect_events[1]["type"], "message.status")
 
-        self.assertEqual(buyer_events[0], {"type": "handle.seen", "user_id": self.seller.id})
-        self.assertEqual(seller_events[0], {"type": "handle.seen", "user_id": self.seller.id})
-        self.assertEqual(buyer_events[1]["type"], "handle.message_status")
-        self.assertEqual(seller_events[1]["type"], "handle.message_status")
-        self.assertEqual(buyer_events[1]["message_id"], message.id)
-        self.assertEqual(seller_events[1]["message_id"], message.id)
-        self.assertEqual(buyer_events[1]["user_id"], self.seller.id)
-        self.assertEqual(seller_events[1]["user_id"], self.seller.id)
-        self.assertEqual(buyer_events[1]["status"], MessageStatus.STATUS_READ)
-        self.assertEqual(seller_events[1]["status"], MessageStatus.STATUS_READ)
+        self.assertEqual(seen_events[0]["type"], "conversation.seen")
+        self.assertEqual(seen_events[0]["user_id"], self.seller.id)
+        self.assertEqual(seen_events[1]["type"], "message.status")
+        self.assertEqual(seen_events[2]["type"], "conversation.seen")
+        self.assertEqual(seen_events[3]["type"], "message.status")
+        self.assertEqual(seen_events[1]["message_id"], message.id)
+        self.assertEqual(seen_events[3]["message_id"], message.id)
+        self.assertEqual(seen_events[1]["user_id"], self.seller.id)
+        self.assertEqual(seen_events[3]["user_id"], self.seller.id)
+        self.assertEqual(seen_events[1]["status"], MessageStatus.STATUS_SEEN)
+        self.assertEqual(seen_events[3]["status"], MessageStatus.STATUS_SEEN)
 
         participant = ConversationParticipant.objects.get(
             conversation=self.conversation,
@@ -232,4 +521,41 @@ class ChatConsumerTests(TransactionTestCase):
         )
         self.assertIsNotNone(participant.last_read_at)
         message_status = MessageStatus.objects.get(message=message, user=self.seller)
-        self.assertEqual(message_status.status, MessageStatus.STATUS_READ)
+        self.assertEqual(message_status.status, MessageStatus.STATUS_SEEN)
+
+    def test_connect_returns_current_typing_state_snapshot(self):
+        async def scenario():
+            third_communicator = None
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
+            seller_communicator, seller_connected, seller_state = await self._connect(
+                self._build_path(user=self.seller)
+            )
+            self.assertTrue(buyer_connected)
+            self.assertTrue(seller_connected)
+
+            try:
+                await seller_communicator.send_json_to({"type": "typing_start"})
+                await buyer_communicator.receive_json_from()
+                await seller_communicator.receive_json_from()
+
+                third_communicator, third_connected, third_state = await self._connect(
+                    self._build_path(user=self.buyer)
+                )
+                self.assertTrue(third_connected)
+                return buyer_state, seller_state, third_state
+            finally:
+                try:
+                    if third_communicator is not None:
+                        await third_communicator.disconnect()
+                except Exception:
+                    pass
+                await buyer_communicator.disconnect()
+                await seller_communicator.disconnect()
+
+        buyer_state, seller_state, third_state = async_to_sync(scenario)()
+        self.assertEqual(buyer_state["typing_user_ids"], [])
+        self.assertEqual(seller_state["typing_user_ids"], [])
+        self.assertEqual(third_state["connected_user_ids"], [self.buyer.id, self.seller.id])
+        self.assertEqual(third_state["typing_user_ids"], [self.seller.id])

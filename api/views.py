@@ -10,6 +10,7 @@ from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveUpdateAPIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 
 from .models import (
     ApiUser,
@@ -38,7 +39,7 @@ from .serializers import (
     PartRequestStatusSerializer,
     SparePartSerializer,
 )
-from chat.services import initialize_message_statuses, mark_message_as_latest
+from chat.services import create_message_with_statuses
 
 
 @api_view(["GET"])
@@ -238,11 +239,13 @@ class MessageViewSet(
         return (
             Message.objects.filter(conversation=conversation)
             .select_related("sender", "reply_to", "product")
-            .prefetch_related("attachments")
+            .prefetch_related("attachments", "statuses__message", "statuses")
             .order_by("client_timestamp", "server_timestamp", "id")
         )
 
-    def perform_create(self, serializer):
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
         conversation = self._get_conversation()
         self._ensure_participant(conversation)
 
@@ -250,24 +253,29 @@ class MessageViewSet(
         if reply_to and reply_to.conversation_id != conversation.id:
             raise ValidationError({"reply_to": "reply_to must be in the same conversation."})
 
-        message = serializer.save(conversation=conversation, sender=self.request.user)
-        mark_message_as_latest(message)
-        initialize_message_statuses(message)
+        files = request.FILES.getlist("files") or []
+        if not files and "file" in request.FILES:
+            files = [request.FILES["file"]]
 
-        files = self.request.FILES.getlist("files") or []
-        if not files and "file" in self.request.FILES:
-            files = [self.request.FILES["file"]]
-
-        if message.message_type == "media" and not files:
+        if serializer.validated_data.get("message_type") == "media" and not files:
             raise ValidationError({"files": "Media message requires file(s)."})
 
-        for uploaded in files:
-            MessageAttachment.objects.create(
-                message=message,
-                file=uploaded,
-                content_type=getattr(uploaded, "content_type", ""),
-                size=getattr(uploaded, "size", 0) or 0,
+        try:
+            payload, _ = create_message_with_statuses(
+                conversation_id=conversation.id,
+                sender=request.user,
+                text=serializer.validated_data.get("text", ""),
+                message_type=serializer.validated_data.get("message_type", "text"),
+                client_timestamp=serializer.validated_data["client_timestamp"],
+                product=serializer.validated_data.get("product"),
+                reply_to=reply_to,
+                files=files,
             )
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)}) from exc
+
+        headers = self.get_success_headers({"id": payload["id"]})
+        return Response(payload, status=201, headers=headers)
 
 
 class MessageStatusViewSet(
