@@ -9,8 +9,8 @@
 # To use chained requests, run them in order. 
 # If you want to run any request directly, set the manual IDs below and use the "manual" versions.
 
-@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0MTA5NDI4LCJpYXQiOjE3NzQxMDkxMjgsImp0aSI6IjVlN2MzZTA4YjdlMjRlN2E5MzlkMzBlYjJmZWFmY2MwIiwidXNlcl9pZCI6IjEifQ.nzz3sZd_kuCWucACsfwim-ORIlfjxFKR7HD5_C-0Oes
-@userId = 2
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0MjE0MTIxLCJpYXQiOjE3NzQyMTM4MjEsImp0aSI6IjlhOTU3MDlhZjlhYzRhYjlhY2QyNzk5MjcxNzk1NzUzIiwidXNlcl9pZCI6IjIifQ.S27mqmWpSQRcdlQN4jFX2tj5oN1bP_hNTtIhVXwzd2s
+@userId = 3
 @partStatusId = 1
 @partRequestId = 1
 @conversationId = 2
@@ -18,7 +18,7 @@
 
 ### Health
 GET {{baseUrl}}/api/health/
-Authorization: Bearer {{accessToken}}
+//Authorization: Bearer {{accessToken}}
 
 ### Auth - Login (JWT)
 # @name login
@@ -27,7 +27,7 @@ Content-Type: {{contentType}}
 
 
 {
-  "username": "user8",
+  "username": "chatseller_20260322214419",
   "password": "test1234"
 }
 
@@ -60,10 +60,10 @@ Content-Type: {{contentType}}
 Accept: {{accept}}
 
 {
-  "email": "use8@example.com",
-  "username": "user8",
-  "name": "User Eight",
-  "phone": "+15551234574",
+  "email": "user3@example.com",
+  "username": "user3",
+  "name": "User Three",
+  "phone": "+15551234569",
   "city": "Riyadh",
   "role": "user",
   "rating": null,

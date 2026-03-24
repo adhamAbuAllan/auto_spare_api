@@ -58,7 +58,8 @@
   <h1>Chat WebSocket Tester</h1>
   <p class="hint">
     Open this file in two browser windows, one per user. Paste a JWT access token for each user,
-    use the same conversation ID, then connect both windows.
+    use the same conversation ID, then connect both windows. Heartbeat pings are sent automatically
+    every 20 seconds while connected, and typing refresh is automatic while you type in the message box.
   </p>
 
   <label for="socketUrl">WebSocket Base URL</label>
@@ -127,6 +128,13 @@
     const logEl = document.getElementById("log");
 
     let ws = null;
+    let heartbeatTimer = null;
+    let typingRefreshTimer = null;
+    let typingStopTimer = null;
+    let typingActive = false;
+    const HEARTBEAT_INTERVAL_MS = 20000;
+    const TYPING_REFRESH_INTERVAL_MS = 4000;
+    const TYPING_IDLE_STOP_MS = 5000;
     timestampInput.value = new Date().toISOString();
 
     function log(message, data) {
@@ -183,13 +191,77 @@
       return `${base}/${conversationId}/?token=${token}`;
     }
 
-    function sendPayload(payload) {
+    function sendPayload(payload, options = {}) {
+      const { silent = false } = options;
       if (!ws || ws.readyState !== WebSocket.OPEN) {
-        log("Cannot send because the socket is not connected.");
+        if (!silent) {
+          log("Cannot send because the socket is not connected.");
+        }
         return;
       }
       ws.send(JSON.stringify(payload));
-      log("Sent", payload);
+      if (!silent) {
+        log("Sent", payload);
+      }
+    }
+
+    function stopHeartbeat() {
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
+    }
+
+    function startHeartbeat() {
+      stopHeartbeat();
+      heartbeatTimer = setInterval(() => {
+        sendPayload({ type: "ping" }, { silent: true });
+      }, HEARTBEAT_INTERVAL_MS);
+    }
+
+    function stopTypingAutomation(sendStop) {
+      if (typingRefreshTimer) {
+        clearInterval(typingRefreshTimer);
+        typingRefreshTimer = null;
+      }
+      if (typingStopTimer) {
+        clearTimeout(typingStopTimer);
+        typingStopTimer = null;
+      }
+      if (sendStop && typingActive) {
+        sendPayload({ type: "typing_stop" }, { silent: true });
+      }
+      typingActive = false;
+    }
+
+    function scheduleTypingStop() {
+      if (typingStopTimer) {
+        clearTimeout(typingStopTimer);
+      }
+      typingStopTimer = setTimeout(() => {
+        stopTypingAutomation(true);
+      }, TYPING_IDLE_STOP_MS);
+    }
+
+    function startTypingAutomation() {
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      if (!typingActive) {
+        typingActive = true;
+        sendPayload({ type: "typing_start" });
+      } else {
+        sendPayload({ type: "typing" }, { silent: true });
+      }
+      if (!typingRefreshTimer) {
+        typingRefreshTimer = setInterval(() => {
+          if (!typingActive) {
+            return;
+          }
+          sendPayload({ type: "typing" }, { silent: true });
+        }, TYPING_REFRESH_INTERVAL_MS);
+      }
+      scheduleTypingStop();
     }
 
     document.getElementById("connectBtn").addEventListener("click", () => {
@@ -206,10 +278,15 @@
       ws = new WebSocket(url);
       log("Connecting", url);
 
-      ws.onopen = () => log("Connected");
+      ws.onopen = () => {
+        log("Connected");
+        startHeartbeat();
+      };
       ws.onmessage = (event) => log("Received", event.data);
       ws.onerror = () => log("Socket error");
       ws.onclose = (event) => {
+        stopHeartbeat();
+        stopTypingAutomation(false);
         log(`Closed code=${event.code} reason=${event.reason || "(none)"}`);
         if (event.code === 1006) {
           log("Hint", "Code 1006 usually means the handshake failed. Common causes: expired token, wrong conversation id, user not in the conversation, or server/Redis not running.");
@@ -252,15 +329,26 @@
       }
 
       sendPayload(payload);
+      stopTypingAutomation(true);
       timestampInput.value = new Date().toISOString();
     });
 
     document.getElementById("typingStartBtn").addEventListener("click", () => {
+      typingActive = true;
       sendPayload({ type: "typing_start" });
+      if (!typingRefreshTimer) {
+        typingRefreshTimer = setInterval(() => {
+          if (!typingActive) {
+            return;
+          }
+          sendPayload({ type: "typing" }, { silent: true });
+        }, TYPING_REFRESH_INTERVAL_MS);
+      }
+      scheduleTypingStop();
     });
 
     document.getElementById("typingStopBtn").addEventListener("click", () => {
-      sendPayload({ type: "typing_stop" });
+      stopTypingAutomation(true);
     });
 
     document.getElementById("seenBtn").addEventListener("click", () => {
@@ -269,6 +357,14 @@
 
     document.getElementById("clearBtn").addEventListener("click", () => {
       logEl.textContent = "";
+    });
+
+    messageTextInput.addEventListener("input", () => {
+      startTypingAutomation();
+    });
+
+    messageTextInput.addEventListener("blur", () => {
+      stopTypingAutomation(true);
     });
 
     tokenInput.addEventListener("input", refreshTokenMeta);

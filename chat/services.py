@@ -67,6 +67,7 @@ def serialize_reply(message):
         "id": message.id,
         "sender": serialize_user(message.sender),
         "text": message.text,
+        "product": serialize_product(message.product),
         "client_timestamp": message.client_timestamp.isoformat(),
         "server_timestamp": message.server_timestamp.isoformat(),
     }
@@ -75,7 +76,12 @@ def serialize_reply(message):
 def serialize_message_payload(message):
     if not hasattr(message, "sender"):
         message = (
-            Message.objects.select_related("sender", "product", "reply_to__sender")
+            Message.objects.select_related(
+                "sender",
+                "product",
+                "reply_to__sender",
+                "reply_to__product",
+            )
             .prefetch_related("attachments", "statuses__message", "statuses")
             .get(pk=message.pk)
         )
@@ -211,7 +217,9 @@ def _create_attachments(message, *, files=None, media_files=None):
 
 def get_default_delivered_user_ids(conversation_id):
     connected_user_ids = get_connected_user_ids(conversation_id)
-    return connected_user_ids or None
+    if connected_user_ids is None:
+        return set()
+    return set(connected_user_ids)
 
 
 def create_message_with_statuses(
@@ -253,7 +261,12 @@ def create_message_with_statuses(
         mark_message_as_latest(message)
         statuses = initialize_message_statuses(message, delivered_user_ids=delivered_user_ids)
         message = (
-            Message.objects.select_related("sender", "product", "reply_to__sender")
+            Message.objects.select_related(
+                "sender",
+                "product",
+                "reply_to__sender",
+                "reply_to__product",
+            )
             .prefetch_related("attachments", "statuses__message", "statuses")
             .get(pk=message.pk)
         )

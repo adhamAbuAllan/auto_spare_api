@@ -14,16 +14,25 @@ Django backend for a car-parts marketplace with REST APIs and real-time chat.
 - WebSocket endpoint: `/ws/chat/<conversation_id>/?token=<jwt_access_token>`
 - Incoming socket events:
   - `chat_message`
+  - `ping`
   - `typing_start`
+  - `typing`
   - `typing_stop`
   - `seen`
 - Outgoing socket events:
+  - `conversation.state`
   - `message.created`
   - `message.status`
+  - `pong`
   - `conversation.typing`
   - `conversation.seen`
 - Message ordering is `(client_timestamp, server_timestamp, id)`.
 - Local development can use `CHANNEL_LAYER_BACKEND=memory`; production should use Redis.
+- In `redis` mode, runtime state does not silently fall back to in-process memory when Redis is down.
+- Production presence and typing are lease-based:
+  - `CHAT_PRESENCE_TTL_SECONDS` defaults to `75`
+  - `CHAT_TYPING_TTL_SECONDS` defaults to `8`
+  - clients should send `ping` every `CHAT_HEARTBEAT_INTERVAL_SECONDS` seconds, default `20`
 
 ## Example `.env`
 
@@ -40,6 +49,9 @@ DB_PORT=5432
 CHANNEL_LAYER_BACKEND=redis
 REDIS_HOST=127.0.0.1
 REDIS_PORT=6379
+CHAT_PRESENCE_TTL_SECONDS=75
+CHAT_TYPING_TTL_SECONDS=8
+CHAT_HEARTBEAT_INTERVAL_SECONDS=20
 ALLOWED_HOSTS=127.0.0.1,localhost
 ```
 
@@ -58,3 +70,8 @@ python manage.py runserver
 ```bash
 python manage.py test api chat
 ```
+
+## Manual Chat Testing
+
+- The browser tester in `chat/testing/chat_test.html` now sends heartbeat `ping` events automatically while connected.
+- Typing refresh is also automatic while the message box is active, so presence and typing stay realistic during manual tests.

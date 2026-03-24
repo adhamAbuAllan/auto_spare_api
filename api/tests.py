@@ -241,14 +241,13 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(payload["conversation_id"], self.conversation.id)
         self.assertEqual(payload["sender"]["id"], self.buyer.id)
         self.assertEqual(payload["message_type"], "text")
-        self.assertEqual(len(payload["statuses"]), 2)
+        self.assertEqual(len(payload["statuses"]), 1)
 
         message = Message.objects.get(pk=payload["id"])
         self.assertEqual(
             set(message.statuses.values_list("user_id", "status")),
             {
                 (self.buyer.id, MessageStatus.STATUS_SENT),
-                (self.seller.id, MessageStatus.STATUS_DELIVERED),
             },
         )
 

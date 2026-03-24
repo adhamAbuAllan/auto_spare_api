@@ -91,6 +91,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         event_type = payload.get("type")
+        await self.touch_presence()
         if event_type == "chat_message":
             await self.process_chat_message(payload)
         elif event_type in {"typing", "typing_start"}:
@@ -99,6 +100,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.process_typing(is_typing=False)
         elif event_type == "seen":
             await self.process_seen()
+        elif event_type == "ping":
+            await self.process_ping()
         else:
             await self.send(
                 text_data=json.dumps(
@@ -108,6 +111,17 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     }
                 )
             )
+
+    async def process_ping(self):
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "pong",
+                    "conversation_id": int(self.conversation_id),
+                    "server_timestamp": timezone.now().isoformat(),
+                }
+            )
+        )
 
     async def process_chat_message(self, payload):
         text = payload.get("text", "")
@@ -239,13 +253,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             reply_to = Message.objects.filter(
                 pk=reply_to_id,
                 conversation_id=self.conversation_id,
-            ).select_related("sender").first()
+            ).select_related("sender", "product").first()
             if reply_to is None:
                 raise ValueError("reply_to must belong to the same conversation.")
 
         delivered_user_ids = get_default_delivered_user_ids(self.conversation_id)
-        if delivered_user_ids is not None:
-            delivered_user_ids = delivered_user_ids - {self.user.id}
+        delivered_user_ids = delivered_user_ids - {self.user.id}
 
         message_payload, status_events = create_message_with_statuses(
             conversation_id=self.conversation_id,
@@ -278,6 +291,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
     @database_sync_to_async
     def mark_delivered(self):
         return mark_conversation_delivered(self.conversation_id, self.user)
+
+    @database_sync_to_async
+    def touch_presence(self):
+        add_connected_user(self.conversation_id, self.user.id, self.connection_id)
 
     @database_sync_to_async
     def update_typing(self, is_typing):

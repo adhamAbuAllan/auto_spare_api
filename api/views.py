@@ -39,7 +39,7 @@ from .serializers import (
     PartRequestStatusSerializer,
     SparePartSerializer,
 )
-from chat.services import create_message_with_statuses
+from chat.services import create_message_with_statuses, get_default_delivered_user_ids
 
 
 @api_view(["GET"])
@@ -238,7 +238,7 @@ class MessageViewSet(
 
         return (
             Message.objects.filter(conversation=conversation)
-            .select_related("sender", "reply_to", "product")
+            .select_related("sender", "product", "reply_to__sender", "reply_to__product")
             .prefetch_related("attachments", "statuses__message", "statuses")
             .order_by("client_timestamp", "server_timestamp", "id")
         )
@@ -260,6 +260,10 @@ class MessageViewSet(
         if serializer.validated_data.get("message_type") == "media" and not files:
             raise ValidationError({"files": "Media message requires file(s)."})
 
+        delivered_user_ids = get_default_delivered_user_ids(conversation.id) - {
+            request.user.id
+        }
+
         try:
             payload, _ = create_message_with_statuses(
                 conversation_id=conversation.id,
@@ -270,6 +274,7 @@ class MessageViewSet(
                 product=serializer.validated_data.get("product"),
                 reply_to=reply_to,
                 files=files,
+                delivered_user_ids=delivered_user_ids,
             )
         except ValueError as exc:
             raise ValidationError({"detail": str(exc)}) from exc

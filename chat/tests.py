@@ -1,4 +1,5 @@
 import base64
+from unittest import mock
 
 from asgiref.sync import async_to_sync
 from channels.testing import WebsocketCommunicator
@@ -15,6 +16,7 @@ from api.models import (
     PartRequestStatus,
 )
 from config.asgi import application
+from .runtime import reset_runtime_state
 
 
 TEST_CHANNEL_LAYERS = {
@@ -29,6 +31,7 @@ class ChatConsumerTests(TransactionTestCase):
     reset_sequences = True
 
     def setUp(self):
+        reset_runtime_state()
         self.buyer = ApiUser.objects.create_user(
             username="buyer",
             email="buyer@example.com",
@@ -71,6 +74,10 @@ class ChatConsumerTests(TransactionTestCase):
             conversation=self.conversation,
             user=self.seller,
         )
+
+    def tearDown(self):
+        reset_runtime_state()
+        super().tearDown()
 
     def _build_path(self, user=None, token=None, conversation_id=None):
         if token is None and user is not None:
@@ -342,6 +349,55 @@ class ChatConsumerTests(TransactionTestCase):
         self.assertEqual(len(media_event["message"]["media"]), 1)
         self.assertEqual(media_event["message"]["media"][0]["content_type"], "text/plain")
 
+    def test_reply_payload_includes_nested_product(self):
+        async def scenario():
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
+            seller_communicator, seller_connected, seller_state = await self._connect(
+                self._build_path(user=self.seller)
+            )
+            self.assertTrue(buyer_connected)
+            self.assertTrue(seller_connected)
+            self.assertEqual(buyer_state["type"], "conversation.state")
+            self.assertEqual(seller_state["type"], "conversation.state")
+
+            try:
+                await buyer_communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "product",
+                        "product_id": self.product.id,
+                        "client_timestamp": "2026-03-23T10:20:00Z",
+                    }
+                )
+                product_events = await self._receive_many(buyer_communicator, 3)
+                await self._receive_many(seller_communicator, 3)
+                product_message_id = product_events[0]["message"]["id"]
+
+                await seller_communicator.send_json_to(
+                    {
+                        "type": "chat_message",
+                        "message_type": "text",
+                        "text": "I can supply this one.",
+                        "reply_to_id": product_message_id,
+                        "client_timestamp": "2026-03-23T10:21:00Z",
+                    }
+                )
+                seller_events = await self._receive_many(seller_communicator, 3)
+                await self._receive_many(buyer_communicator, 3)
+                return seller_events[0]
+            finally:
+                await buyer_communicator.disconnect()
+                await seller_communicator.disconnect()
+
+        reply_event = async_to_sync(scenario)()
+        self.assertEqual(reply_event["type"], "message.created")
+        self.assertEqual(reply_event["message"]["reply_to"]["product"]["id"], self.product.id)
+        self.assertEqual(
+            reply_event["message"]["reply_to"]["product"]["title"], self.product.title
+        )
+
     def test_typing_start_and_stop_broadcast(self):
         async def scenario():
             buyer_communicator, buyer_connected, buyer_state = await self._connect(
@@ -559,3 +615,149 @@ class ChatConsumerTests(TransactionTestCase):
         self.assertEqual(seller_state["typing_user_ids"], [])
         self.assertEqual(third_state["connected_user_ids"], [self.buyer.id, self.seller.id])
         self.assertEqual(third_state["typing_user_ids"], [self.seller.id])
+
+    def test_ping_returns_pong_and_keeps_presence_active(self):
+        clock = {"now": 0.0}
+
+        with mock.patch("chat.runtime.time.time", side_effect=lambda: clock["now"]):
+            async def scenario():
+                buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                    self._build_path(user=self.buyer)
+                )
+                self.assertTrue(buyer_connected)
+                self.assertEqual(buyer_state["type"], "conversation.state")
+
+                try:
+                    clock["now"] = 40.0
+                    await buyer_communicator.send_json_to({"type": "ping"})
+                    pong = await buyer_communicator.receive_json_from()
+
+                    clock["now"] = 74.0
+                    seller_communicator, seller_connected, seller_state = await self._connect(
+                        self._build_path(user=self.seller)
+                    )
+                    self.assertTrue(seller_connected)
+                    await seller_communicator.disconnect()
+                    return pong, seller_state
+                finally:
+                    await buyer_communicator.disconnect()
+
+            pong, seller_state = async_to_sync(scenario)()
+
+        self.assertEqual(pong["type"], "pong")
+        self.assertEqual(pong["conversation_id"], self.conversation.id)
+        self.assertEqual(seller_state["connected_user_ids"], [self.buyer.id, self.seller.id])
+
+    def test_idle_connection_expires_without_ping(self):
+        clock = {"now": 0.0}
+
+        with mock.patch("chat.runtime.time.time", side_effect=lambda: clock["now"]):
+            async def scenario():
+                buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                    self._build_path(user=self.buyer)
+                )
+                self.assertTrue(buyer_connected)
+                self.assertEqual(buyer_state["type"], "conversation.state")
+
+                try:
+                    clock["now"] = 76.0
+                    seller_communicator, seller_connected, seller_state = await self._connect(
+                        self._build_path(user=self.seller)
+                    )
+                    self.assertTrue(seller_connected)
+                    await seller_communicator.disconnect()
+                    return seller_state
+                finally:
+                    await buyer_communicator.disconnect()
+
+            seller_state = async_to_sync(scenario)()
+
+        self.assertEqual(seller_state["connected_user_ids"], [self.seller.id])
+
+    def test_typing_expires_without_disconnect(self):
+        clock = {"now": 0.0}
+
+        with mock.patch("chat.runtime.time.time", side_effect=lambda: clock["now"]):
+            async def scenario():
+                third_communicator = None
+                buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                    self._build_path(user=self.buyer)
+                )
+                seller_communicator, seller_connected, seller_state = await self._connect(
+                    self._build_path(user=self.seller)
+                )
+                self.assertTrue(buyer_connected)
+                self.assertTrue(seller_connected)
+                self.assertEqual(buyer_state["type"], "conversation.state")
+                self.assertEqual(seller_state["type"], "conversation.state")
+
+                try:
+                    await seller_communicator.send_json_to({"type": "typing_start"})
+                    await buyer_communicator.receive_json_from()
+                    await seller_communicator.receive_json_from()
+
+                    clock["now"] = 9.0
+                    third_communicator, third_connected, third_state = await self._connect(
+                        self._build_path(user=self.buyer)
+                    )
+                    self.assertTrue(third_connected)
+                    return third_state
+                finally:
+                    try:
+                        if third_communicator is not None:
+                            await third_communicator.disconnect()
+                    except Exception:
+                        pass
+                    await buyer_communicator.disconnect()
+                    await seller_communicator.disconnect()
+
+            third_state = async_to_sync(scenario)()
+
+        self.assertEqual(third_state["typing_user_ids"], [])
+        self.assertEqual(third_state["connected_user_ids"], [self.buyer.id, self.seller.id])
+
+    def test_message_delivery_skips_expired_presence(self):
+        clock = {"now": 0.0}
+
+        with mock.patch("chat.runtime.time.time", side_effect=lambda: clock["now"]):
+            async def scenario():
+                buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                    self._build_path(user=self.buyer)
+                )
+                seller_communicator, seller_connected, seller_state = await self._connect(
+                    self._build_path(user=self.seller)
+                )
+                self.assertTrue(buyer_connected)
+                self.assertTrue(seller_connected)
+                self.assertEqual(buyer_state["type"], "conversation.state")
+                self.assertEqual(seller_state["type"], "conversation.state")
+
+                try:
+                    clock["now"] = 76.0
+                    await buyer_communicator.send_json_to(
+                        {
+                            "type": "chat_message",
+                            "text": "Only sent because seller lease expired",
+                            "message_type": "text",
+                            "client_timestamp": "2026-03-23T12:00:00Z",
+                        }
+                    )
+                    buyer_events = await self._receive_many(buyer_communicator, 2)
+                    seller_events = await self._receive_many(seller_communicator, 2)
+                    return buyer_events, seller_events
+                finally:
+                    await buyer_communicator.disconnect()
+                    await seller_communicator.disconnect()
+
+            buyer_events, seller_events = async_to_sync(scenario)()
+
+        self.assertEqual(buyer_events[0]["type"], "message.created")
+        self.assertEqual(seller_events[0]["type"], "message.created")
+        self.assertEqual(buyer_events[1]["type"], "message.status")
+        self.assertEqual(seller_events[1]["type"], "message.status")
+        self.assertEqual(buyer_events[1]["status"], MessageStatus.STATUS_SENT)
+        self.assertEqual(seller_events[1]["status"], MessageStatus.STATUS_SENT)
+        self.assertEqual(
+            Message.objects.latest("id").statuses.values_list("user_id", "status").get(),
+            (self.buyer.id, MessageStatus.STATUS_SENT),
+        )
