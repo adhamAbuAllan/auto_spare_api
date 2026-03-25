@@ -2,11 +2,13 @@ from django.urls import include, path
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework.routers import DefaultRouter
 
+from chat.views import chat_tester
 from .views import (
     ApiUserViewSet,
     ConversationParticipantViewSet,
     ConversationViewSet,
     MeView,
+    MobileDeviceViewSet,
     MessageStatusViewSet,
     MessageViewSet,
     PartImageViewSet,
@@ -30,9 +32,11 @@ router.register(
 )
 router.register("messages", MessageViewSet, basename="messages")
 router.register("message-statuses", MessageStatusViewSet, basename="message-statuses")
+router.register("mobile-devices", MobileDeviceViewSet, basename="mobile-devices")
 
 
 urlpatterns = [
+    path("chat-tester/", chat_tester, name="chat_tester"),
     path("health/", health, name="health"),
     path("me/", MeView.as_view(), name="me"),
     path("token/", TokenObtainPairView.as_view(), name="token_obtain_pair"),

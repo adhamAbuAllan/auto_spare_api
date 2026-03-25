@@ -10,6 +10,7 @@ from .models import (
     ConversationParticipant,
     Message,
     MessageStatus,
+    MobileDevice,
     PartRequest,
     PartRequestStatus,
     SparePart,
@@ -341,3 +342,167 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(response.json()["message_type"], "media")
         self.assertEqual(len(response.json()["media"]), 1)
         self.assertEqual(response.json()["media"][0]["content_type"], "text/plain")
+
+    def test_conversation_participants_are_scoped_to_request_user(self):
+        outsider = self.create_user(username="outsider", email="outsider@example.com")
+        other_conversation = Conversation.objects.create(title="Private")
+        ConversationParticipant.objects.create(conversation=other_conversation, user=outsider)
+
+        response = self.client.get("/api/conversation-participants/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 2)
+        self.assertTrue(
+            all(item["conversation"] == self.conversation.id for item in payload["results"])
+        )
+
+    def test_conversation_participant_create_requires_membership(self):
+        outsider = self.create_user(username="outsider2", email="outsider2@example.com")
+        intruder = self.create_user(username="intruder", email="intruder@example.com")
+        self.client.force_authenticate(user=intruder)
+
+        response = self.client.post(
+            "/api/conversation-participants/",
+            data={
+                "conversation": self.conversation.id,
+                "user": outsider.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_message_statuses_are_scoped_to_user_conversations(self):
+        MessageStatus.objects.create(
+            message=self.seller_message,
+            user=self.buyer,
+            status=MessageStatus.STATUS_DELIVERED,
+        )
+        outsider = self.create_user(username="outsider3", email="outsider3@example.com")
+        private_conversation = Conversation.objects.create(title="Private")
+        ConversationParticipant.objects.create(conversation=private_conversation, user=outsider)
+        private_message = Message.objects.create(
+            conversation=private_conversation,
+            sender=outsider,
+            message_type="text",
+            text="Private message",
+            client_timestamp=timezone.now(),
+        )
+        MessageStatus.objects.create(
+            message=private_message,
+            user=outsider,
+            status=MessageStatus.STATUS_SENT,
+        )
+
+        response = self.client.get("/api/message-statuses/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["message"], self.seller_message.id)
+
+    def test_message_status_create_requires_membership(self):
+        outsider = self.create_user(username="outsider4", email="outsider4@example.com")
+        private_conversation = Conversation.objects.create(title="Private")
+        ConversationParticipant.objects.create(conversation=private_conversation, user=outsider)
+        private_message = Message.objects.create(
+            conversation=private_conversation,
+            sender=outsider,
+            message_type="text",
+            text="Private message",
+            client_timestamp=timezone.now(),
+        )
+
+        response = self.client.post(
+            "/api/message-statuses/",
+            data={
+                "message": private_message.id,
+                "status": MessageStatus.STATUS_DELIVERED,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+
+class MobileApiTests(ApiTestCase):
+    def setUp(self):
+        self.user = self.create_user(username="mobile-user", email="mobile@example.com")
+        self.client.force_authenticate(user=self.user)
+
+    def test_patch_me_updates_chat_notification_preferences(self):
+        response = self.client.patch(
+            "/api/me/",
+            data={
+                "chat_push_enabled": False,
+                "chat_message_preview_enabled": False,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertFalse(self.user.chat_push_enabled)
+        self.assertFalse(self.user.chat_message_preview_enabled)
+
+    def test_mobile_device_registration_upserts_by_device_id(self):
+        create_response = self.client.post(
+            "/api/mobile-devices/",
+            data={
+                "device_id": "android-001",
+                "platform": "android",
+                "push_token": "token-v1",
+                "device_name": "Pixel 9",
+                "app_version": "1.0.0",
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        self.assertEqual(MobileDevice.objects.count(), 1)
+        self.assertEqual(MobileDevice.objects.first().push_token, "token-v1")
+
+        update_response = self.client.post(
+            "/api/mobile-devices/",
+            data={
+                "device_id": "android-001",
+                "platform": "android",
+                "push_token": "token-v2",
+                "device_name": "Pixel 9",
+                "app_version": "1.0.1",
+                "is_active": True,
+            },
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        self.assertEqual(MobileDevice.objects.count(), 1)
+        device = MobileDevice.objects.get()
+        self.assertEqual(device.push_token, "token-v2")
+        self.assertEqual(device.app_version, "1.0.1")
+
+    def test_list_mobile_devices_returns_only_current_user_devices(self):
+        MobileDevice.objects.create(
+            user=self.user,
+            device_id="ios-001",
+            platform="ios",
+            push_token="token-ios",
+            device_name="iPhone",
+        )
+        other_user = self.create_user(username="other-mobile", email="other-mobile@example.com")
+        MobileDevice.objects.create(
+            user=other_user,
+            device_id="android-999",
+            platform="android",
+            push_token="token-other",
+            device_name="Other phone",
+        )
+
+        response = self.client.get("/api/mobile-devices/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["device_id"], "ios-001")

@@ -4,7 +4,7 @@ from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
 from django.utils import timezone
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.generics import RetrieveUpdateAPIView
@@ -19,6 +19,7 @@ from .models import (
     Message,
     MessageAttachment,
     MessageStatus,
+    MobileDevice,
     PartImage,
     PartRequest,
     PartRequestStatus,
@@ -31,6 +32,7 @@ from .serializers import (
     ConversationParticipantSerializer,
     ConversationSerializer,
     MeSerializer,
+    MobileDeviceSerializer,
     MessageCreateSerializer,
     MessageListSerializer,
     MessageStatusSerializer,
@@ -192,8 +194,26 @@ class ConversationParticipantViewSet(
     mixins.CreateModelMixin,
     viewsets.GenericViewSet,
 ):
-    queryset = ConversationParticipant.objects.order_by("-joined_at")
+    permission_classes = [IsAuthenticated]
     serializer_class = ConversationParticipantSerializer
+
+    def get_queryset(self):
+        return (
+            ConversationParticipant.objects.filter(
+                conversation__participants__user=self.request.user
+            )
+            .select_related("conversation", "user")
+            .order_by("-joined_at")
+            .distinct()
+        )
+
+    def perform_create(self, serializer):
+        conversation = serializer.validated_data["conversation"]
+        if not ConversationParticipant.objects.filter(
+            conversation=conversation, user=self.request.user
+        ).exists():
+            raise PermissionDenied("You are not a participant in this conversation.")
+        serializer.save()
 
 
 class MessageViewSet(
@@ -288,15 +308,61 @@ class MessageStatusViewSet(
     mixins.CreateModelMixin,
     viewsets.GenericViewSet,
 ):
+    permission_classes = [IsAuthenticated]
     serializer_class = MessageStatusSerializer
 
     def get_queryset(self):
-        return MessageStatus.objects.select_related("message", "user").order_by(
-            "-updated_at"
+        queryset = MessageStatus.objects.select_related("message", "user").filter(
+            message__conversation__participants__user=self.request.user
         )
+        conversation_id = self.request.query_params.get("conversation_id")
+        if conversation_id:
+            queryset = queryset.filter(message__conversation_id=conversation_id)
+
+        return queryset.order_by("-updated_at").distinct()
 
     def perform_create(self, serializer):
+        message = serializer.validated_data["message"]
+        if not ConversationParticipant.objects.filter(
+            conversation_id=message.conversation_id,
+            user=self.request.user,
+        ).exists():
+            raise PermissionDenied("You are not a participant in this conversation.")
         serializer.save(user=self.request.user)
+
+
+class MobileDeviceViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+    serializer_class = MobileDeviceSerializer
+
+    def get_queryset(self):
+        return MobileDevice.objects.filter(user=self.request.user).order_by(
+            "-last_seen_at", "-updated_at", "-id"
+        )
+
+    def create(self, request, *args, **kwargs):
+        device_id = str(request.data.get("device_id", "")).strip()
+        instance = None
+        if device_id:
+            instance = MobileDevice.objects.filter(
+                user=request.user,
+                device_id=device_id,
+            ).first()
+
+        serializer = self.get_serializer(instance=instance, data=request.data, partial=bool(instance))
+        serializer.is_valid(raise_exception=True)
+        device = serializer.save(user=request.user)
+
+        response_serializer = self.get_serializer(device)
+        response_status = status.HTTP_200_OK if instance else status.HTTP_201_CREATED
+        headers = self.get_success_headers(response_serializer.data) if not instance else {}
+        return Response(response_serializer.data, status=response_status, headers=headers)
 
 
 class MeView(RetrieveUpdateAPIView):

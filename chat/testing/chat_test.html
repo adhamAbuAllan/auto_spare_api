@@ -3,117 +3,453 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Chat WebSocket Tester</title>
+  <title>Chat REST + WebSocket Tester</title>
   <style>
-    body {
-      font-family: Arial, sans-serif;
-      margin: 24px;
-      line-height: 1.4;
+    :root {
+      color-scheme: light;
+      --bg: #f4f7f6;
+      --panel: #ffffff;
+      --panel-alt: #eaf2ef;
+      --line: #d7e2dd;
+      --text: #13332d;
+      --muted: #5f766f;
+      --accent: #0b7a75;
+      --accent-strong: #075853;
+      --danger: #9c2f2f;
+      --code-bg: #0f1715;
+      --code-fg: #f4f7f6;
     }
-    label {
-      display: block;
-      margin-top: 12px;
-      font-weight: 600;
-    }
-    input, textarea, button {
-      font: inherit;
-    }
-    input, textarea {
-      width: 100%;
-      max-width: 900px;
-      padding: 8px;
+
+    * {
       box-sizing: border-box;
     }
+
+    body {
+      margin: 0;
+      padding: 24px;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+      line-height: 1.4;
+    }
+
+    h1, h2, h3 {
+      margin: 0 0 12px;
+    }
+
+    p {
+      margin: 0 0 12px;
+    }
+
+    .shell {
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    .hero {
+      padding: 24px;
+      border-radius: 20px;
+      background: linear-gradient(135deg, #0b7a75 0%, #1e9b8f 100%);
+      color: white;
+      margin-bottom: 20px;
+    }
+
+    .hint {
+      color: var(--muted);
+    }
+
+    .hero .hint {
+      color: rgba(255, 255, 255, 0.9);
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      padding: 18px;
+      margin-bottom: 20px;
+    }
+
+    .panel.alt {
+      background: var(--panel-alt);
+    }
+
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .grid.two {
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    }
+
+    .card {
+      background: rgba(255, 255, 255, 0.75);
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 16px;
+    }
+
+    label {
+      display: block;
+      margin: 10px 0 6px;
+      font-weight: 700;
+    }
+
+    input,
+    textarea,
+    button,
+    select {
+      font: inherit;
+    }
+
+    input,
+    textarea,
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #c7d7d1;
+      border-radius: 10px;
+      background: white;
+      color: var(--text);
+    }
+
     textarea {
-      min-height: 120px;
+      min-height: 110px;
       resize: vertical;
     }
+
+    .token-output {
+      min-height: 84px;
+    }
+
     .row {
       display: flex;
-      gap: 8px;
       flex-wrap: wrap;
+      gap: 8px;
       margin-top: 12px;
     }
+
     button {
-      padding: 8px 12px;
+      border: none;
+      border-radius: 999px;
+      padding: 10px 14px;
       cursor: pointer;
+      background: var(--accent);
+      color: white;
     }
-    #log {
+
+    button.secondary {
+      background: #dbe8e3;
+      color: var(--text);
+    }
+
+    button.warning {
+      background: #b45309;
+    }
+
+    .meta {
+      margin-top: 10px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #f5faf8;
+      color: var(--muted);
       white-space: pre-wrap;
-      background: #111;
-      color: #f3f3f3;
-      padding: 12px;
-      border-radius: 8px;
-      min-height: 240px;
-      max-width: 900px;
-      overflow: auto;
+      word-break: break-word;
     }
-    .hint {
-      color: #555;
-      max-width: 900px;
+
+    .inline-note {
+      margin-top: 12px;
+      padding: 12px 14px;
+      border-left: 4px solid var(--accent);
+      background: #f4fbf8;
+      border-radius: 10px;
+    }
+
+    .inline-note.warning {
+      border-left-color: #b45309;
+      background: #fff8ee;
+    }
+
+    .pill-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 14px;
+    }
+
+    .pill {
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.16);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: white;
+      font-weight: 700;
+    }
+
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .checkbox-row input {
+      width: auto;
+    }
+
+    #log {
+      min-height: 320px;
+      max-height: 560px;
+      overflow: auto;
+      padding: 16px;
+      border-radius: 14px;
+      background: var(--code-bg);
+      color: var(--code-fg);
+      white-space: pre-wrap;
+      word-break: break-word;
+      font-family: Consolas, monospace;
+      font-size: 13px;
     }
   </style>
 </head>
 <body>
-  <h1>Chat WebSocket Tester</h1>
-  <p class="hint">
-    Open this file in two browser windows, one per user. Paste a JWT access token for each user,
-    use the same conversation ID, then connect both windows. Heartbeat pings are sent automatically
-    every 20 seconds while connected, and typing refresh is automatic while you type in the message box.
-  </p>
+  <div class="shell">
+    <div class="hero">
+      <h1>Chat REST + WebSocket Tester</h1>
+      <p class="hint">
+        Use this page from <strong>/api/chat-tester/</strong>, not as a local <strong>file://</strong> page.
+        The REST buttons below call your Django API directly, so serving the tester from Django keeps everything same-origin.
+      </p>
+      <div class="pill-row">
+        <div class="pill">Create or log in two users</div>
+        <div class="pill">Create a conversation</div>
+        <div class="pill">Add the second participant</div>
+        <div class="pill">Open two windows for websocket chat</div>
+        <div class="pill">Refresh REST snapshots after chat events</div>
+      </div>
+    </div>
 
-  <label for="socketUrl">WebSocket Base URL</label>
-  <input id="socketUrl" value="ws://127.0.0.1:8000/ws/chat">
+    <div class="panel alt">
+      <h2>Environment</h2>
+      <div class="grid two">
+        <div>
+          <label for="apiBaseUrl">API Base URL</label>
+          <input id="apiBaseUrl">
+        </div>
+        <div>
+          <label for="socketUrl">WebSocket Base URL</label>
+          <input id="socketUrl">
+        </div>
+      </div>
+      <div class="grid two">
+        <div>
+          <label for="conversationTitle">Conversation Title</label>
+          <input id="conversationTitle" value="Browser Chat Test Conversation">
+        </div>
+        <div>
+          <label for="conversationId">Conversation ID</label>
+          <input id="conversationId" value="1">
+        </div>
+      </div>
+    </div>
 
-  <label for="conversationId">Conversation ID</label>
-  <input id="conversationId" value="1">
+    <div class="panel">
+      <h2>1. Users And Tokens</h2>
+      <p class="hint">
+        Start here. Create or log in two users, then reuse their access tokens in two browser windows for websocket testing.
+      </p>
+      <div class="grid two">
+        <div class="card">
+          <h3>User A</h3>
+          <label for="userAUsername">Username</label>
+          <input id="userAUsername" value="chatbuyer_browser">
 
-  <label for="token">JWT Access Token</label>
-  <textarea id="token" placeholder="Paste the access token returned by /api/token/"></textarea>
-  <p id="tokenMeta" class="hint">Token info will appear here.</p>
+          <label for="userAPassword">Password</label>
+          <input id="userAPassword" type="password" value="test1234">
 
-  <div class="row">
-    <button id="connectBtn" type="button">Connect</button>
-    <button id="disconnectBtn" type="button">Disconnect</button>
-    <button id="typingStartBtn" type="button">Typing Start</button>
-    <button id="typingStopBtn" type="button">Typing Stop</button>
-    <button id="seenBtn" type="button">Send Seen</button>
-    <button id="clearBtn" type="button">Clear Log</button>
+          <label for="userAEmail">Email</label>
+          <input id="userAEmail" value="chatbuyer_browser@example.com">
+
+          <label for="userAName">Name</label>
+          <input id="userAName" value="Chat Buyer Browser">
+
+          <label for="userARole">Role</label>
+          <select id="userARole">
+            <option value="user" selected>user</option>
+            <option value="supplier">supplier</option>
+          </select>
+
+          <div class="row">
+            <button id="userACreateLoginBtn" type="button">Create + Login A</button>
+            <button id="userALoginBtn" type="button" class="secondary">Login A</button>
+            <button id="userAMeBtn" type="button" class="secondary">GET /me A</button>
+            <button id="userAUseTokenBtn" type="button" class="secondary">Use A Token Below</button>
+          </div>
+
+          <label for="userAAccessToken">Access Token</label>
+          <textarea id="userAAccessToken" class="token-output" readonly></textarea>
+
+          <label for="userARefreshToken">Refresh Token</label>
+          <textarea id="userARefreshToken" class="token-output" readonly></textarea>
+
+          <div id="userAMeta" class="meta">No token yet.</div>
+        </div>
+
+        <div class="card">
+          <h3>User B</h3>
+          <label for="userBUsername">Username</label>
+          <input id="userBUsername" value="chatseller_browser">
+
+          <label for="userBPassword">Password</label>
+          <input id="userBPassword" type="password" value="test1234">
+
+          <label for="userBEmail">Email</label>
+          <input id="userBEmail" value="chatseller_browser@example.com">
+
+          <label for="userBName">Name</label>
+          <input id="userBName" value="Chat Seller Browser">
+
+          <label for="userBRole">Role</label>
+          <select id="userBRole">
+            <option value="user">user</option>
+            <option value="supplier" selected>supplier</option>
+          </select>
+
+          <div class="row">
+            <button id="userBCreateLoginBtn" type="button">Create + Login B</button>
+            <button id="userBLoginBtn" type="button" class="secondary">Login B</button>
+            <button id="userBMeBtn" type="button" class="secondary">GET /me B</button>
+            <button id="userBUseTokenBtn" type="button" class="secondary">Use B Token Below</button>
+          </div>
+
+          <label for="userBAccessToken">Access Token</label>
+          <textarea id="userBAccessToken" class="token-output" readonly></textarea>
+
+          <label for="userBRefreshToken">Refresh Token</label>
+          <textarea id="userBRefreshToken" class="token-output" readonly></textarea>
+
+          <div id="userBMeta" class="meta">No token yet.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>2. Conversation Setup And REST Snapshots</h2>
+      <p class="hint">
+        Use these buttons for the REST endpoints that were missing from the old browser tester.
+      </p>
+      <div class="row">
+        <button id="createConversationBtn" type="button">Create Conversation As A</button>
+        <button id="addParticipantBtn" type="button">Add User B To Conversation</button>
+        <button id="listConversationsABtn" type="button" class="secondary">GET /conversations A</button>
+        <button id="listConversationsBBtn" type="button" class="secondary">GET /conversations B</button>
+        <button id="listMessagesABtn" type="button" class="secondary">GET /messages A</button>
+        <button id="listMessagesBBtn" type="button" class="secondary">GET /messages B</button>
+        <button id="refreshSnapshotsBtn" type="button" class="warning">Refresh All Snapshots</button>
+      </div>
+      <div class="inline-note">
+        Recommended flow: create or log in both users, create the conversation as User A, add User B as a participant, then confirm the conversation and message history with the GET buttons before opening websocket chat.
+      </div>
+      <div class="inline-note warning">
+        Typing and presence are websocket runtime signals. They will not show up in <strong>GET /api/messages/</strong> or <strong>GET /api/conversations/</strong>. Message creation and seen status will.
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>3. WebSocket Chat Testing</h2>
+      <p class="hint">
+        Open this tester in two browser windows. In one window use User A's token, in the other use User B's token, then connect both to the same conversation.
+      </p>
+
+      <label for="token">JWT Access Token For This Window</label>
+      <textarea id="token" placeholder="Use the User A or User B token buttons above."></textarea>
+      <div id="tokenMeta" class="meta">Token info will appear here.</div>
+
+      <div class="checkbox-row">
+        <input id="autoRefreshRest" type="checkbox" checked>
+        <label for="autoRefreshRest" style="margin: 0;">Auto-refresh REST snapshots after message and seen events</label>
+      </div>
+
+      <div class="row">
+        <button id="connectBtn" type="button">Connect</button>
+        <button id="disconnectBtn" type="button" class="secondary">Disconnect</button>
+        <button id="typingStartBtn" type="button" class="secondary">Typing Start</button>
+        <button id="typingStopBtn" type="button" class="secondary">Typing Stop</button>
+        <button id="seenBtn" type="button" class="secondary">Send Seen</button>
+        <button id="clearBtn" type="button" class="secondary">Clear Log</button>
+      </div>
+
+      <div class="grid two">
+        <div>
+          <label for="messageText">Message Text</label>
+          <textarea id="messageText">Hello from the browser tester.</textarea>
+        </div>
+        <div>
+          <label for="timestamp">Client Timestamp (ISO 8601)</label>
+          <input id="timestamp">
+
+          <label for="messageType">Message Type</label>
+          <select id="messageType">
+            <option value="text" selected>text</option>
+            <option value="product">product</option>
+            <option value="media">media</option>
+          </select>
+
+          <label for="productId">Product ID (for product messages)</label>
+          <input id="productId" placeholder="Optional part request id">
+
+          <label for="replyToId">Reply To Message ID</label>
+          <input id="replyToId" placeholder="Optional reply target id">
+        </div>
+      </div>
+
+      <label for="mediaName">Media File Name (base64 socket upload)</label>
+      <input id="mediaName" value="chat-note.txt">
+
+      <label for="mediaContentType">Media Content Type</label>
+      <input id="mediaContentType" value="text/plain">
+
+      <label for="mediaBase64">Media File Base64 (only for media messages)</label>
+      <textarea id="mediaBase64" placeholder="Optional base64 content for media websocket messages"></textarea>
+
+      <div class="row">
+        <button id="sendMessageBtn" type="button">Send Chat Message</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Log</h2>
+      <div id="log"></div>
+    </div>
   </div>
-
-  <label for="messageText">Message Text</label>
-  <textarea id="messageText">Hello from the browser tester.</textarea>
-
-  <label for="messageType">Message Type</label>
-  <input id="messageType" value="text">
-
-  <label for="productId">Product ID (for product messages)</label>
-  <input id="productId" placeholder="Optional part request id">
-
-  <label for="replyToId">Reply To Message ID</label>
-  <input id="replyToId" placeholder="Optional reply target id">
-
-  <label for="timestamp">Client Timestamp (ISO 8601)</label>
-  <input id="timestamp">
-
-  <label for="mediaName">Media File Name (base64 socket upload)</label>
-  <input id="mediaName" value="chat-note.txt">
-
-  <label for="mediaContentType">Media Content Type</label>
-  <input id="mediaContentType" value="text/plain">
-
-  <label for="mediaBase64">Media File Base64 (only for media messages)</label>
-  <textarea id="mediaBase64" placeholder="Optional base64 content for media websocket messages"></textarea>
-
-  <div class="row">
-    <button id="sendMessageBtn" type="button">Send Chat Message</button>
-  </div>
-
-  <h2>Log</h2>
-  <div id="log"></div>
 
   <script>
+    const SHARED_STATE_KEY = "chatTesterSharedStateV2";
+    const SHARED_FIELDS = [
+      "apiBaseUrl",
+      "socketUrl",
+      "conversationTitle",
+      "conversationId",
+      "userAUsername",
+      "userAPassword",
+      "userAEmail",
+      "userAName",
+      "userARole",
+      "userAAccessToken",
+      "userARefreshToken",
+      "userBUsername",
+      "userBPassword",
+      "userBEmail",
+      "userBName",
+      "userBRole",
+      "userBAccessToken",
+      "userBRefreshToken"
+    ];
+
     const socketUrlInput = document.getElementById("socketUrl");
+    const apiBaseUrlInput = document.getElementById("apiBaseUrl");
+    const conversationTitleInput = document.getElementById("conversationTitle");
     const conversationIdInput = document.getElementById("conversationId");
     const tokenInput = document.getElementById("token");
     const messageTextInput = document.getElementById("messageText");
@@ -125,6 +461,7 @@
     const mediaContentTypeInput = document.getElementById("mediaContentType");
     const mediaBase64Input = document.getElementById("mediaBase64");
     const tokenMetaEl = document.getElementById("tokenMeta");
+    const autoRefreshRestInput = document.getElementById("autoRefreshRest");
     const logEl = document.getElementById("log");
 
     let ws = null;
@@ -132,22 +469,64 @@
     let typingRefreshTimer = null;
     let typingStopTimer = null;
     let typingActive = false;
+    let refreshAfterEventTimer = null;
     const HEARTBEAT_INTERVAL_MS = 20000;
     const TYPING_REFRESH_INTERVAL_MS = 4000;
     const TYPING_IDLE_STOP_MS = 5000;
+
+    const userSlots = {
+      A: {
+        label: "User A",
+        username: document.getElementById("userAUsername"),
+        password: document.getElementById("userAPassword"),
+        email: document.getElementById("userAEmail"),
+        name: document.getElementById("userAName"),
+        role: document.getElementById("userARole"),
+        accessToken: document.getElementById("userAAccessToken"),
+        refreshToken: document.getElementById("userARefreshToken"),
+        meta: document.getElementById("userAMeta")
+      },
+      B: {
+        label: "User B",
+        username: document.getElementById("userBUsername"),
+        password: document.getElementById("userBPassword"),
+        email: document.getElementById("userBEmail"),
+        name: document.getElementById("userBName"),
+        role: document.getElementById("userBRole"),
+        accessToken: document.getElementById("userBAccessToken"),
+        refreshToken: document.getElementById("userBRefreshToken"),
+        meta: document.getElementById("userBMeta")
+      }
+    };
+
     timestampInput.value = new Date().toISOString();
+
+    function defaultApiBaseUrl() {
+      if (window.location.origin && window.location.origin !== "null") {
+        return `${window.location.origin}/api`;
+      }
+      return "http://127.0.0.1:8000/api";
+    }
+
+    function defaultSocketBaseUrl() {
+      if (window.location.host) {
+        const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+        return `${protocol}://${window.location.host}/ws/chat`;
+      }
+      return "ws://127.0.0.1:8000/ws/chat";
+    }
 
     function log(message, data) {
       const timestamp = new Date().toISOString();
-      const line = data === undefined
-        ? `[${timestamp}] ${message}`
-        : `[${timestamp}] ${message}\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}`;
-      logEl.textContent += `${line}\n\n`;
+      const payload = data === undefined
+        ? message
+        : `${message}\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}`;
+      logEl.textContent += `[${timestamp}] ${payload}\n\n`;
       logEl.scrollTop = logEl.scrollHeight;
     }
 
     function decodeJwtPayload(token) {
-      const parts = token.split(".");
+      const parts = (token || "").split(".");
       if (parts.length !== 3) {
         return null;
       }
@@ -160,49 +539,353 @@
       }
     }
 
-    function refreshTokenMeta() {
-      const token = tokenInput.value.trim();
-      if (!token) {
-        tokenMetaEl.textContent = "Token info will appear here.";
-        return;
-      }
-
+    function formatTokenMeta(token) {
       const payload = decodeJwtPayload(token);
-      if (!payload) {
-        tokenMetaEl.textContent = "Token could not be decoded. Check for truncation or extra spaces.";
-        return;
+      if (!token) {
+        return "No token yet.";
       }
-
-      const issuedAt = payload.iat ? new Date(payload.iat * 1000) : null;
-      const expiresAt = payload.exp ? new Date(payload.exp * 1000) : null;
-      const isExpired = expiresAt ? expiresAt.getTime() <= Date.now() : false;
-      tokenMetaEl.textContent = [
+      if (!payload) {
+        return "Token could not be decoded. Check for truncation or invalid formatting.";
+      }
+      const issuedAt = payload.iat ? new Date(payload.iat * 1000).toISOString() : "(missing)";
+      const expiresAt = payload.exp ? new Date(payload.exp * 1000).toISOString() : "(missing)";
+      const isExpired = payload.exp ? payload.exp * 1000 <= Date.now() : false;
+      return [
         `user_id=${payload.user_id ?? "(missing)"}`,
-        issuedAt ? `issued=${issuedAt.toISOString()}` : "issued=(missing)",
-        expiresAt ? `expires=${expiresAt.toISOString()}` : "expires=(missing)",
+        `issued=${issuedAt}`,
+        `expires=${expiresAt}`,
         `status=${isExpired ? "expired" : "usable"}`
       ].join(" | ");
     }
 
-    function buildUrl() {
-      const base = socketUrlInput.value.replace(/\/$/, "");
+    function refreshSocketTokenMeta() {
+      tokenMetaEl.textContent = formatTokenMeta(tokenInput.value.trim());
+    }
+
+    function refreshUserMeta(slot) {
+      const refs = userSlots[slot];
+      refs.meta.textContent = formatTokenMeta(refs.accessToken.value.trim());
+    }
+
+    function getUserIdFromAccessToken(slot) {
+      const refs = userSlots[slot];
+      const payload = decodeJwtPayload(refs.accessToken.value.trim());
+      return payload?.user_id ?? null;
+    }
+
+    function captureSharedState() {
+      const state = {};
+      for (const fieldId of SHARED_FIELDS) {
+        const element = document.getElementById(fieldId);
+        state[fieldId] = element ? element.value : "";
+      }
+      return state;
+    }
+
+    function saveSharedState() {
+      localStorage.setItem(SHARED_STATE_KEY, JSON.stringify(captureSharedState()));
+    }
+
+    function restoreSharedState() {
+      const raw = localStorage.getItem(SHARED_STATE_KEY);
+      if (!raw) {
+        return;
+      }
+      try {
+        const state = JSON.parse(raw);
+        for (const fieldId of SHARED_FIELDS) {
+          if (!(fieldId in state)) {
+            continue;
+          }
+          const element = document.getElementById(fieldId);
+          if (element) {
+            element.value = state[fieldId];
+          }
+        }
+      } catch (error) {
+        log("Could not restore shared tester state", String(error));
+      }
+    }
+
+    function buildApiUrl(path) {
+      const base = apiBaseUrlInput.value.trim().replace(/\/$/, "");
+      const suffix = path.startsWith("/") ? path : `/${path}`;
+      return `${base}${suffix}`;
+    }
+
+    function buildSocketUrl() {
+      const base = socketUrlInput.value.trim().replace(/\/$/, "");
       const conversationId = conversationIdInput.value.trim();
       const token = encodeURIComponent(tokenInput.value.trim());
       return `${base}/${conversationId}/?token=${token}`;
     }
 
-    function sendPayload(payload, options = {}) {
-      const { silent = false } = options;
-      if (!ws || ws.readyState !== WebSocket.OPEN) {
-        if (!silent) {
-          log("Cannot send because the socket is not connected.");
+    function extractErrorText(payload) {
+      if (typeof payload === "string") {
+        return payload;
+      }
+      if (!payload) {
+        return "No response body.";
+      }
+      if (payload.detail) {
+        return typeof payload.detail === "string"
+          ? payload.detail
+          : JSON.stringify(payload.detail);
+      }
+      return JSON.stringify(payload);
+    }
+
+    async function requestJson(path, options = {}) {
+      const {
+        method = "GET",
+        token = null,
+        body = null
+      } = options;
+
+      const headers = {
+        Accept: "application/json"
+      };
+
+      if (token) {
+        headers.Authorization = `Bearer ${token}`;
+      }
+
+      let fetchBody;
+      if (body !== null) {
+        headers["Content-Type"] = "application/json";
+        fetchBody = JSON.stringify(body);
+      }
+
+      const url = buildApiUrl(path);
+      const response = await fetch(url, {
+        method,
+        headers,
+        body: fetchBody
+      });
+
+      const rawText = await response.text();
+      let payload = rawText;
+      if (rawText) {
+        try {
+          payload = JSON.parse(rawText);
+        } catch (error) {
+          payload = rawText;
         }
+      } else {
+        payload = null;
+      }
+
+      log(`${method} ${url} -> ${response.status}`, payload);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${extractErrorText(payload)}`);
+      }
+
+      return payload;
+    }
+
+    async function createUser(slot) {
+      const refs = userSlots[slot];
+      const username = refs.username.value.trim();
+      const password = refs.password.value;
+      const email = refs.email.value.trim() || `${username}@example.com`;
+      const name = refs.name.value.trim() || username;
+      const role = refs.role.value;
+
+      if (!username || !password) {
+        throw new Error(`${refs.label} needs both username and password.`);
+      }
+
+      return requestJson("/users/", {
+        method: "POST",
+        body: {
+          email,
+          username,
+          name,
+          role,
+          password
+        }
+      });
+    }
+
+    async function loginUser(slot) {
+      const refs = userSlots[slot];
+      const username = refs.username.value.trim();
+      const password = refs.password.value;
+
+      if (!username || !password) {
+        throw new Error(`${refs.label} needs both username and password.`);
+      }
+
+      const payload = await requestJson("/token/", {
+        method: "POST",
+        body: {
+          username,
+          password
+        }
+      });
+
+      refs.accessToken.value = payload.access || "";
+      refs.refreshToken.value = payload.refresh || "";
+      refreshUserMeta(slot);
+      saveSharedState();
+      return payload;
+    }
+
+    async function createAndLogin(slot) {
+      try {
+        await createUser(slot);
+      } catch (error) {
+        log(`${userSlots[slot].label} create step did not finish cleanly. Login will still be attempted.`, String(error));
+      }
+      return loginUser(slot);
+    }
+
+    async function fetchMe(slot) {
+      const refs = userSlots[slot];
+      const accessToken = refs.accessToken.value.trim();
+      if (!accessToken) {
+        throw new Error(`${refs.label} has no access token yet.`);
+      }
+      return requestJson("/me/", {
+        method: "GET",
+        token: accessToken
+      });
+    }
+
+    function useSlotTokenForSocket(slot) {
+      const refs = userSlots[slot];
+      tokenInput.value = refs.accessToken.value.trim();
+      refreshSocketTokenMeta();
+      log(`Loaded ${refs.label} access token into the websocket section.`);
+    }
+
+    async function createConversationAsA() {
+      const token = userSlots.A.accessToken.value.trim();
+      if (!token) {
+        throw new Error("User A must be logged in before creating a conversation.");
+      }
+
+      const title = conversationTitleInput.value.trim() || "Browser Chat Test Conversation";
+      const payload = await requestJson("/conversations/", {
+        method: "POST",
+        token,
+        body: {
+          title
+        }
+      });
+
+      if (payload?.id) {
+        conversationIdInput.value = String(payload.id);
+        saveSharedState();
+      }
+
+      return payload;
+    }
+
+    async function addParticipantB() {
+      const conversationId = Number(conversationIdInput.value.trim());
+      if (!conversationId) {
+        throw new Error("Create or enter a valid conversation ID first.");
+      }
+
+      const tokenA = userSlots.A.accessToken.value.trim();
+      if (!tokenA) {
+        throw new Error("User A must be logged in before adding a participant.");
+      }
+
+      let userBId = getUserIdFromAccessToken("B");
+      if (!userBId) {
+        const me = await fetchMe("B");
+        userBId = me?.id;
+      }
+      if (!userBId) {
+        throw new Error("User B must be logged in before being added to the conversation.");
+      }
+
+      return requestJson("/conversation-participants/", {
+        method: "POST",
+        token: tokenA,
+        body: {
+          conversation: conversationId,
+          user: userBId
+        }
+      });
+    }
+
+    async function listConversations(slot) {
+      const refs = userSlots[slot];
+      const accessToken = refs.accessToken.value.trim();
+      if (!accessToken) {
+        throw new Error(`${refs.label} has no access token yet.`);
+      }
+
+      return requestJson("/conversations/", {
+        method: "GET",
+        token: accessToken
+      });
+    }
+
+    async function listMessages(slot) {
+      const refs = userSlots[slot];
+      const accessToken = refs.accessToken.value.trim();
+      const conversationId = conversationIdInput.value.trim();
+
+      if (!accessToken) {
+        throw new Error(`${refs.label} has no access token yet.`);
+      }
+      if (!conversationId) {
+        throw new Error("Conversation ID is required before loading messages.");
+      }
+
+      return requestJson(`/messages/?conversation_id=${encodeURIComponent(conversationId)}`, {
+        method: "GET",
+        token: accessToken
+      });
+    }
+
+    async function refreshRestSnapshots() {
+      const tasks = [];
+
+      if (userSlots.A.accessToken.value.trim()) {
+        tasks.push(listConversations("A"));
+      }
+      if (userSlots.B.accessToken.value.trim()) {
+        tasks.push(listConversations("B"));
+      }
+
+      if (conversationIdInput.value.trim()) {
+        if (userSlots.A.accessToken.value.trim()) {
+          tasks.push(listMessages("A"));
+        }
+        if (userSlots.B.accessToken.value.trim()) {
+          tasks.push(listMessages("B"));
+        }
+      }
+
+      if (!tasks.length) {
+        log("Refresh skipped", "No authenticated users are available yet for REST snapshot refresh.");
         return;
       }
-      ws.send(JSON.stringify(payload));
-      if (!silent) {
-        log("Sent", payload);
+
+      await Promise.allSettled(tasks);
+    }
+
+    function scheduleRestRefresh(reason) {
+      if (!autoRefreshRestInput.checked) {
+        return;
       }
+
+      if (refreshAfterEventTimer) {
+        clearTimeout(refreshAfterEventTimer);
+      }
+
+      refreshAfterEventTimer = setTimeout(() => {
+        log("Auto-refreshing REST snapshots", reason);
+        refreshRestSnapshots().catch((error) => {
+          log("Snapshot refresh failed", String(error));
+        });
+      }, 350);
     }
 
     function stopHeartbeat() {
@@ -264,17 +947,50 @@
       scheduleTypingStop();
     }
 
-    document.getElementById("connectBtn").addEventListener("click", () => {
+    function sendPayload(payload, options = {}) {
+      const { silent = false } = options;
+      if (!ws || ws.readyState !== WebSocket.OPEN) {
+        if (!silent) {
+          log("Cannot send because the socket is not connected.");
+        }
+        return;
+      }
+      ws.send(JSON.stringify(payload));
+      if (!silent) {
+        log("Sent", payload);
+      }
+    }
+
+    function handleIncomingSocketData(rawData) {
+      let parsed = rawData;
+      try {
+        parsed = JSON.parse(rawData);
+      } catch (error) {
+        parsed = rawData;
+      }
+
+      log("Received", parsed);
+
+      if (parsed && typeof parsed === "object") {
+        const type = parsed.type;
+        if (type === "message.created" || type === "message.status" || type === "conversation.seen") {
+          scheduleRestRefresh(`Triggered by websocket event ${type}.`);
+        }
+      }
+    }
+
+    function connectSocket() {
       if (ws && ws.readyState === WebSocket.OPEN) {
         log("Socket is already connected.");
         return;
       }
 
-      const url = buildUrl();
+      const url = buildSocketUrl();
       const payload = decodeJwtPayload(tokenInput.value.trim());
       if (payload?.exp && payload.exp * 1000 <= Date.now()) {
         log("Token is already expired. Generate a fresh JWT before connecting.");
       }
+
       ws = new WebSocket(url);
       log("Connecting", url);
 
@@ -282,25 +998,28 @@
         log("Connected");
         startHeartbeat();
       };
-      ws.onmessage = (event) => log("Received", event.data);
+      ws.onmessage = (event) => handleIncomingSocketData(event.data);
       ws.onerror = () => log("Socket error");
       ws.onclose = (event) => {
         stopHeartbeat();
         stopTypingAutomation(false);
         log(`Closed code=${event.code} reason=${event.reason || "(none)"}`);
         if (event.code === 1006) {
-          log("Hint", "Code 1006 usually means the handshake failed. Common causes: expired token, wrong conversation id, user not in the conversation, or server/Redis not running.");
+          log(
+            "Hint",
+            "Code 1006 usually means the handshake failed. Common causes: expired token, wrong conversation id, user not in the conversation, or server/Redis not running."
+          );
         }
       };
-    });
+    }
 
-    document.getElementById("disconnectBtn").addEventListener("click", () => {
+    function disconnectSocket() {
       if (ws) {
         ws.close();
       }
-    });
+    }
 
-    document.getElementById("sendMessageBtn").addEventListener("click", () => {
+    function sendChatMessage() {
       const payload = {
         type: "chat_message",
         text: messageTextInput.value,
@@ -331,8 +1050,81 @@
       sendPayload(payload);
       stopTypingAutomation(true);
       timestampInput.value = new Date().toISOString();
+    }
+
+    function attachSharedFieldListeners() {
+      for (const fieldId of SHARED_FIELDS) {
+        const element = document.getElementById(fieldId);
+        if (element) {
+          element.addEventListener("input", saveSharedState);
+          element.addEventListener("change", saveSharedState);
+        }
+      }
+    }
+
+    function setEnvironmentDefaults() {
+      if (!apiBaseUrlInput.value.trim()) {
+        apiBaseUrlInput.value = defaultApiBaseUrl();
+      }
+      if (!socketUrlInput.value.trim()) {
+        socketUrlInput.value = defaultSocketBaseUrl();
+      }
+    }
+
+    document.getElementById("userACreateLoginBtn").addEventListener("click", () => {
+      createAndLogin("A").catch((error) => log("User A setup failed", String(error)));
+    });
+    document.getElementById("userALoginBtn").addEventListener("click", () => {
+      loginUser("A").catch((error) => log("User A login failed", String(error)));
+    });
+    document.getElementById("userAMeBtn").addEventListener("click", () => {
+      fetchMe("A").catch((error) => log("User A /me failed", String(error)));
+    });
+    document.getElementById("userAUseTokenBtn").addEventListener("click", () => {
+      useSlotTokenForSocket("A");
     });
 
+    document.getElementById("userBCreateLoginBtn").addEventListener("click", () => {
+      createAndLogin("B").catch((error) => log("User B setup failed", String(error)));
+    });
+    document.getElementById("userBLoginBtn").addEventListener("click", () => {
+      loginUser("B").catch((error) => log("User B login failed", String(error)));
+    });
+    document.getElementById("userBMeBtn").addEventListener("click", () => {
+      fetchMe("B").catch((error) => log("User B /me failed", String(error)));
+    });
+    document.getElementById("userBUseTokenBtn").addEventListener("click", () => {
+      useSlotTokenForSocket("B");
+    });
+
+    document.getElementById("createConversationBtn").addEventListener("click", () => {
+      createConversationAsA()
+        .then(() => refreshRestSnapshots())
+        .catch((error) => log("Conversation creation failed", String(error)));
+    });
+    document.getElementById("addParticipantBtn").addEventListener("click", () => {
+      addParticipantB()
+        .then(() => refreshRestSnapshots())
+        .catch((error) => log("Add participant failed", String(error)));
+    });
+    document.getElementById("listConversationsABtn").addEventListener("click", () => {
+      listConversations("A").catch((error) => log("GET /conversations A failed", String(error)));
+    });
+    document.getElementById("listConversationsBBtn").addEventListener("click", () => {
+      listConversations("B").catch((error) => log("GET /conversations B failed", String(error)));
+    });
+    document.getElementById("listMessagesABtn").addEventListener("click", () => {
+      listMessages("A").catch((error) => log("GET /messages A failed", String(error)));
+    });
+    document.getElementById("listMessagesBBtn").addEventListener("click", () => {
+      listMessages("B").catch((error) => log("GET /messages B failed", String(error)));
+    });
+    document.getElementById("refreshSnapshotsBtn").addEventListener("click", () => {
+      refreshRestSnapshots().catch((error) => log("Snapshot refresh failed", String(error)));
+    });
+
+    document.getElementById("connectBtn").addEventListener("click", connectSocket);
+    document.getElementById("disconnectBtn").addEventListener("click", disconnectSocket);
     document.getElementById("typingStartBtn").addEventListener("click", () => {
       typingActive = true;
       sendPayload({ type: "typing_start" });
@@ -346,29 +1138,52 @@
       }
       scheduleTypingStop();
     });
-
     document.getElementById("typingStopBtn").addEventListener("click", () => {
       stopTypingAutomation(true);
     });
-
     document.getElementById("seenBtn").addEventListener("click", () => {
       sendPayload({ type: "seen" });
+      scheduleRestRefresh("Triggered by websocket seen event.");
     });
-
+    document.getElementById("sendMessageBtn").addEventListener("click", sendChatMessage);
     document.getElementById("clearBtn").addEventListener("click", () => {
       logEl.textContent = "";
     });
 
-    messageTextInput.addEventListener("input", () => {
-      startTypingAutomation();
+    messageTextInput.addEventListener("input", startTypingAutomation);
+    messageTextInput.addEventListener("blur", () => stopTypingAutomation(true));
+    tokenInput.addEventListener("input", refreshSocketTokenMeta);
+
+    window.addEventListener("storage", (event) => {
+      if (event.key !== SHARED_STATE_KEY) {
+        return;
+      }
+      restoreSharedState();
+      refreshUserMeta("A");
+      refreshUserMeta("B");
+      refreshSocketTokenMeta();
+      log("Shared tester state reloaded from another window.");
     });
 
-    messageTextInput.addEventListener("blur", () => {
-      stopTypingAutomation(true);
-    });
+    restoreSharedState();
+    setEnvironmentDefaults();
+    attachSharedFieldListeners();
+    refreshUserMeta("A");
+    refreshUserMeta("B");
+    refreshSocketTokenMeta();
+    saveSharedState();
 
-    tokenInput.addEventListener("input", refreshTokenMeta);
-    refreshTokenMeta();
+    if (window.location.protocol === "file:") {
+      log(
+        "Warning",
+        "You opened the tester as a local file. REST buttons may fail due to CORS. Prefer http://127.0.0.1:8000/api/chat-tester/."
+      );
+    } else {
+      log(
+        "Ready",
+        "Use Create + Login for User A and User B, then create the conversation, add User B, and open a second browser window for websocket testing."
+      );
+    }
   </script>
 </body>
 </html>

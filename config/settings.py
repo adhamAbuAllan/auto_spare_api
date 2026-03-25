@@ -29,6 +29,15 @@ def _env_bool(value, default=False):
     return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 
 
+def _env_int(value, default=None):
+    if value is None or str(value).strip() == "":
+        return default
+    try:
+        return int(str(value).strip())
+    except ValueError:
+        return default
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
@@ -203,6 +212,7 @@ CHAT_MAX_MEDIA_BYTES = int(os.getenv("CHAT_MAX_MEDIA_BYTES", str(5 * 1024 * 1024
 CHAT_PRESENCE_TTL_SECONDS = int(os.getenv("CHAT_PRESENCE_TTL_SECONDS", "75"))
 CHAT_TYPING_TTL_SECONDS = int(os.getenv("CHAT_TYPING_TTL_SECONDS", "8"))
 CHAT_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("CHAT_HEARTBEAT_INTERVAL_SECONDS", "20"))
+CHAT_TRACE_CONVERSATION_ID = _env_int(os.getenv("CHAT_TRACE_CONVERSATION_ID"))
 CHAT_ALLOWED_MEDIA_TYPES = tuple(
     item.strip()
     for item in os.getenv(
@@ -211,3 +221,28 @@ CHAT_ALLOWED_MEDIA_TYPES = tuple(
     ).split(",")
     if item.strip()
 )
+
+CHAT_LOG_LEVEL = os.getenv("CHAT_LOG_LEVEL", "INFO").upper()
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "formatters": {
+        "chat_verbose": {
+            "format": "%(asctime)s %(levelname)s [%(name)s] %(message)s",
+        }
+    },
+    "handlers": {
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "chat_verbose",
+        }
+    },
+    "loggers": {
+        "chat": {
+            "handlers": ["console"],
+            "level": CHAT_LOG_LEVEL,
+            "propagate": False,
+        }
+    },
+}

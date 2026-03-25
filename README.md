@@ -65,6 +65,34 @@ python manage.py migrate
 python manage.py runserver
 ```
 
+## Docker Stack
+
+For a production-style chat setup, use:
+
+- PostgreSQL for persisted chat data
+- Redis for Channels and realtime presence/typing state
+- Daphne for the ASGI websocket server
+
+The repository now includes:
+
+- `docker-compose.yml`
+- `Dockerfile`
+- `docker-entrypoint.sh`
+
+Run the stack with:
+
+```bash
+docker compose up --build
+```
+
+The container startup will:
+
+1. Wait for PostgreSQL and Redis.
+2. Run migrations.
+3. Start Daphne on port `8000`.
+
+The web service uses the health endpoint at `/api/health/`, and the websocket/chat runtime uses Redis when `CHANNEL_LAYER_BACKEND=redis`.
+
 ## Tests
 
 ```bash

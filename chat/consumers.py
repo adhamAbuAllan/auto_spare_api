@@ -1,7 +1,9 @@
 import json
+import logging
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.conf import settings
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
@@ -19,14 +21,61 @@ from .services import (
     mark_conversation_seen,
 )
 
+logger = logging.getLogger("chat.events")
+trace_logger = logging.getLogger("chat.trace")
+
 
 class ChatConsumer(AsyncWebsocketConsumer):
+    def should_trace_payloads(self):
+        trace_conversation_id = getattr(settings, "CHAT_TRACE_CONVERSATION_ID", None)
+        if trace_conversation_id is None:
+            return False
+
+        try:
+            return int(self.conversation_id) == trace_conversation_id
+        except (TypeError, ValueError):
+            return False
+
+    def log_trace_payload(self, *, direction, payload=None, raw_text=None):
+        if not self.should_trace_payloads():
+            return
+
+        if payload is not None:
+            serialized_payload = json.dumps(payload, indent=2, sort_keys=True, default=str)
+        else:
+            serialized_payload = raw_text or ""
+
+        trace_logger.info(
+            "chat.trace direction=%s conversation_id=%s user_id=%s connection_id=%s\n%s",
+            direction,
+            self.conversation_id,
+            getattr(self.user, "id", None),
+            getattr(self, "connection_id", None),
+            serialized_payload,
+        )
+
+    async def send(self, text_data=None, bytes_data=None, close=False):
+        if text_data:
+            try:
+                payload = json.loads(text_data)
+            except json.JSONDecodeError:
+                self.log_trace_payload(direction="outgoing", raw_text=text_data)
+            else:
+                self.log_trace_payload(direction="outgoing", payload=payload)
+
+        await super().send(text_data=text_data, bytes_data=bytes_data, close=close)
+
     async def connect(self):
         self.group_name = None
         self.user = self.scope.get("user")
         self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
         self.connection_id = self.channel_name
         if not self.user or self.user.is_anonymous:
+            logger.info(
+                "chat.connect.rejected reason=unauthenticated conversation_id=%s connection_id=%s",
+                self.conversation_id,
+                self.connection_id,
+            )
             await self.close(code=4401)
             return
 
@@ -34,12 +83,24 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         is_allowed = await self.is_participant()
         if not is_allowed:
+            logger.info(
+                "chat.connect.rejected reason=forbidden conversation_id=%s user_id=%s connection_id=%s",
+                self.conversation_id,
+                self.user.id,
+                self.connection_id,
+            )
             await self.close(code=4403)
             return
 
         await self.channel_layer.group_add(self.group_name, self.channel_name)
         await self.mark_connected()
         await self.accept()
+        logger.info(
+            "chat.connect.accepted conversation_id=%s user_id=%s connection_id=%s",
+            self.conversation_id,
+            self.user.id,
+            self.connection_id,
+        )
         await self.send(
             text_data=json.dumps(
                 {
@@ -62,6 +123,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             typing_payload = await self.update_typing(False)
             await self.channel_layer.group_discard(self.group_name, self.channel_name)
             await self.mark_disconnected()
+            logger.info(
+                "chat.disconnect conversation_id=%s user_id=%s connection_id=%s close_code=%s",
+                self.conversation_id,
+                self.user.id,
+                self.connection_id,
+                close_code,
+            )
             if typing_payload["changed"]:
                 await self.channel_layer.group_send(
                     self.group_name,
@@ -77,9 +145,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not text_data:
             return
 
+        self.log_trace_payload(direction="incoming", raw_text=text_data)
         try:
             payload = json.loads(text_data)
         except json.JSONDecodeError:
+            logger.info(
+                "chat.receive.invalid_json conversation_id=%s user_id=%s connection_id=%s",
+                self.conversation_id,
+                getattr(self.user, "id", None),
+                self.connection_id,
+            )
             await self.send(
                 text_data=json.dumps(
                     {
@@ -91,6 +166,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
             return
 
         event_type = payload.get("type")
+        logger.info(
+            "chat.receive conversation_id=%s user_id=%s connection_id=%s event_type=%s",
+            self.conversation_id,
+            self.user.id,
+            self.connection_id,
+            event_type,
+        )
         await self.touch_presence()
         if event_type == "chat_message":
             await self.process_chat_message(payload)
@@ -103,6 +185,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
         elif event_type == "ping":
             await self.process_ping()
         else:
+            logger.info(
+                "chat.receive.unsupported conversation_id=%s user_id=%s event_type=%s",
+                self.conversation_id,
+                self.user.id,
+                event_type,
+            )
             await self.send(
                 text_data=json.dumps(
                     {
@@ -113,6 +201,12 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
 
     async def process_ping(self):
+        logger.info(
+            "chat.ping conversation_id=%s user_id=%s connection_id=%s",
+            self.conversation_id,
+            self.user.id,
+            self.connection_id,
+        )
         await self.send(
             text_data=json.dumps(
                 {
@@ -134,6 +228,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
         if not client_timestamp:
             client_timestamp = timezone.now()
 
+        logger.info(
+            "chat.message.received conversation_id=%s user_id=%s message_type=%s product_id=%s reply_to_id=%s media_count=%s text_length=%s",
+            self.conversation_id,
+            self.user.id,
+            message_type,
+            payload.get("product_id"),
+            payload.get("reply_to_id"),
+            len(payload.get("media_files") or []),
+            len(text or ""),
+        )
         try:
             message = await self.create_message(
                 text=text,
@@ -154,8 +258,20 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
             return
         if not message:
+            logger.info(
+                "chat.message.skipped conversation_id=%s user_id=%s",
+                self.conversation_id,
+                self.user.id,
+            )
             return
 
+        logger.info(
+            "chat.message.created conversation_id=%s user_id=%s message_id=%s status_events=%s",
+            self.conversation_id,
+            self.user.id,
+            message["message"]["id"],
+            len(message["status_events"]),
+        )
         await self.channel_layer.group_send(
             self.group_name,
             {
@@ -174,6 +290,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def process_typing(self, *, is_typing):
         typing_payload = await self.update_typing(is_typing)
+        logger.info(
+            "chat.typing conversation_id=%s user_id=%s is_typing=%s changed=%s",
+            self.conversation_id,
+            self.user.id,
+            is_typing,
+            typing_payload["changed"],
+        )
         if not typing_payload["changed"]:
             return
         await self.channel_layer.group_send(
@@ -188,6 +311,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def process_seen(self):
         status_events, seen_at = await self.update_seen()
+        logger.info(
+            "chat.seen conversation_id=%s user_id=%s status_events=%s seen_at=%s",
+            self.conversation_id,
+            self.user.id,
+            len(status_events),
+            seen_at,
+        )
         await self.channel_layer.group_send(
             self.group_name,
             {

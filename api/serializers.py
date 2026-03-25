@@ -8,6 +8,7 @@ from .models import (
     MessageAttachment,
     MessageReaction,
     MessageStatus,
+    MobileDevice,
     PartImage,
     PartRequest,
     PartRequestStatus,
@@ -107,7 +108,42 @@ class ConversationParticipantSerializer(serializers.ModelSerializer):
     class Meta:
         model = ConversationParticipant
         fields = ["id", "conversation", "user", "joined_at", "last_read_at"]
-        read_only_fields = ["id", "joined_at"]
+        read_only_fields = ["id", "joined_at", "last_read_at"]
+
+
+class MobileDeviceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MobileDevice
+        fields = [
+            "id",
+            "device_id",
+            "platform",
+            "push_token",
+            "device_name",
+            "app_version",
+            "is_active",
+            "last_seen_at",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "last_seen_at", "created_at", "updated_at"]
+
+    def validate(self, attrs):
+        is_active = attrs.get("is_active", getattr(self.instance, "is_active", True))
+        push_token = attrs.get("push_token", getattr(self.instance, "push_token", "")).strip()
+        device_id = attrs.get("device_id", getattr(self.instance, "device_id", "")).strip()
+
+        if not device_id:
+            raise serializers.ValidationError({"device_id": "device_id is required."})
+        if is_active and not push_token:
+            raise serializers.ValidationError(
+                {"push_token": "push_token is required for active mobile devices."}
+            )
+
+        attrs["device_id"] = device_id
+        if "push_token" in attrs:
+            attrs["push_token"] = push_token
+        return attrs
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -287,6 +323,8 @@ class MeSerializer(serializers.ModelSerializer):
             "city",
             "role",
             "rating",
+            "chat_push_enabled",
+            "chat_message_preview_enabled",
             "created_at",
         ]
         read_only_fields = ["id", "email", "username", "role", "rating", "created_at"]
@@ -296,7 +334,7 @@ class MessageStatusSerializer(serializers.ModelSerializer):
     class Meta:
         model = MessageStatus
         fields = ["id", "message", "user", "status", "updated_at"]
-        read_only_fields = ["id", "updated_at"]
+        read_only_fields = ["id", "user", "updated_at"]
 
 
 class TypingStatusSerializer(serializers.ModelSerializer):

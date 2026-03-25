@@ -18,6 +18,8 @@ class ApiUser(AbstractUser):
     city = models.CharField(max_length=120, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_USER)
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+    chat_push_enabled = models.BooleanField(default=True)
+    chat_message_preview_enabled = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -118,6 +120,45 @@ class ConversationParticipant(models.Model):
 
     def __str__(self):
         return f"{self.user_id} in {self.conversation_id}"
+
+
+class MobileDevice(models.Model):
+    PLATFORM_ANDROID = "android"
+    PLATFORM_IOS = "ios"
+    PLATFORM_WEB = "web"
+    PLATFORM_CHOICES = [
+        (PLATFORM_ANDROID, "Android"),
+        (PLATFORM_IOS, "iOS"),
+        (PLATFORM_WEB, "Web"),
+    ]
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="mobile_devices"
+    )
+    device_id = models.CharField(max_length=191)
+    platform = models.CharField(max_length=20, choices=PLATFORM_CHOICES)
+    push_token = models.CharField(max_length=255, blank=True)
+    device_name = models.CharField(max_length=120, blank=True)
+    app_version = models.CharField(max_length=50, blank=True)
+    is_active = models.BooleanField(default=True)
+    last_seen_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "device_id"],
+                name="unique_mobile_device_per_user",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "is_active"]),
+            models.Index(fields=["platform"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.platform}:{self.device_id}"
 
 
 class Message(models.Model):
