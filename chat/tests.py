@@ -51,10 +51,12 @@ class ChatConsumerTests(TransactionTestCase):
             name="Outsider",
             password="test1234",
         )
-        self.status = PartRequestStatus.objects.create(
-            code="open",
-            label="Open",
-            is_terminal=False,
+        self.status, _ = PartRequestStatus.objects.get_or_create(
+            code="awaiting",
+            defaults={
+                "label": "Awaiting",
+                "is_terminal": False,
+            },
         )
         self.product = PartRequest.objects.create(
             requester=self.buyer,
@@ -94,10 +96,14 @@ class ChatConsumerTests(TransactionTestCase):
             initial_state = await communicator.receive_json_from()
         return communicator, connected, initial_state
 
-    async def _receive_many(self, communicator, count):
+    async def _receive_many(self, communicator, count, *, ignore_event_types=None):
+        ignore_event_types = set(ignore_event_types or {"user.presence"})
         events = []
-        for _ in range(count):
-            events.append(await communicator.receive_json_from())
+        while len(events) < count:
+            event = await communicator.receive_json_from()
+            if event.get("type") in ignore_event_types:
+                continue
+            events.append(event)
         return events
 
     def test_participant_can_connect(self):
@@ -110,9 +116,60 @@ class ChatConsumerTests(TransactionTestCase):
             self.assertEqual(initial_state["conversation_id"], self.conversation.id)
             self.assertEqual(initial_state["connected_user_ids"], [self.buyer.id])
             self.assertEqual(initial_state["typing_user_ids"], [])
+            self.assertEqual(initial_state["online_user_ids"], [self.buyer.id])
             await communicator.disconnect()
 
         async_to_sync(scenario)()
+
+    def test_global_user_presence_broadcasts_across_shared_conversations(self):
+        second_conversation = Conversation.objects.create(title="Supplier Direct")
+        ConversationParticipant.objects.create(
+            conversation=second_conversation,
+            user=self.seller,
+        )
+        ConversationParticipant.objects.create(
+            conversation=second_conversation,
+            user=self.outsider,
+        )
+
+        async def scenario():
+            buyer_communicator, buyer_connected, buyer_state = await self._connect(
+                self._build_path(user=self.buyer)
+            )
+            self.assertTrue(buyer_connected)
+            self.assertEqual(buyer_state["online_user_ids"], [self.buyer.id])
+            self.assertIn(str(self.seller.id), buyer_state["presence_last_seen_at_by_user_id"])
+
+            seller_communicator, seller_connected, _ = await self._connect(
+                self._build_path(user=self.seller, conversation_id=second_conversation.id)
+            )
+            self.assertTrue(seller_connected)
+
+            try:
+                online_event = None
+                for _ in range(3):
+                    candidate = await buyer_communicator.receive_json_from()
+                    if candidate.get("type") == "user.presence" and candidate.get("user_id") == self.seller.id:
+                        online_event = candidate
+                        break
+            finally:
+                await seller_communicator.disconnect()
+
+            offline_event = await buyer_communicator.receive_json_from()
+            await buyer_communicator.disconnect()
+            return online_event, offline_event
+
+        online_event, offline_event = async_to_sync(scenario)()
+        self.assertIsNotNone(online_event)
+        self.assertEqual(online_event["type"], "user.presence")
+        self.assertEqual(online_event["user_id"], self.seller.id)
+        self.assertTrue(online_event["is_online"])
+        self.assertIsNotNone(online_event["last_seen_at"])
+
+        self.assertEqual(offline_event["type"], "user.presence")
+        self.assertEqual(offline_event["user_id"], self.seller.id)
+        self.assertFalse(offline_event["is_online"])
+        self.assertIsNotNone(offline_event["last_seen_at"])
 
     def test_non_participant_and_invalid_token_are_rejected(self):
         async def scenario():

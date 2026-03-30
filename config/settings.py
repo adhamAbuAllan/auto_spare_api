@@ -38,6 +38,26 @@ def _env_int(value, default=None):
         return default
 
 
+def _env_list(name, default=""):
+    value = os.getenv(name, default)
+    if value is None:
+        return []
+    return [
+        item.strip()
+        for item in str(value).split(",")
+        if item.strip()
+    ]
+
+
+def _append_unique(values, extras):
+    seen = set(values)
+    for item in extras:
+        if item not in seen:
+            values.append(item)
+            seen.add(item)
+    return values
+
+
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = os.getenv(
     "SECRET_KEY",
@@ -47,14 +67,46 @@ SECRET_KEY = os.getenv(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _env_bool(os.getenv("DEBUG"), default=True)
 
-ALLOWED_HOSTS = [
-    host.strip()
-    for host in os.getenv(
-        "ALLOWED_HOSTS",
-        "127.0.0.1,localhost,testserver",
-    ).split(",")
-    if host.strip()
-]
+ENABLE_NGROK = _env_bool(os.getenv("ENABLE_NGROK"), default=False)
+
+ALLOWED_HOSTS = _env_list(
+    "ALLOWED_HOSTS",
+    "127.0.0.1,localhost,testserver",
+)
+CSRF_TRUSTED_ORIGINS = _env_list("CSRF_TRUSTED_ORIGINS")
+
+if ENABLE_NGROK:
+    ALLOWED_HOSTS = _append_unique(
+        ALLOWED_HOSTS,
+        [
+            ".ngrok-free.app",
+            ".ngrok-free.dev",
+            ".ngrok.app",
+            ".ngrok.dev",
+            ".ngrok.io",
+        ],
+    )
+    CSRF_TRUSTED_ORIGINS = _append_unique(
+        CSRF_TRUSTED_ORIGINS,
+        [
+            "https://*.ngrok-free.app",
+            "https://*.ngrok-free.dev",
+            "https://*.ngrok.app",
+            "https://*.ngrok.dev",
+            "https://*.ngrok.io",
+        ],
+    )
+
+TRUST_PROXY_HEADERS = _env_bool(
+    os.getenv("TRUST_PROXY_HEADERS"),
+    default=ENABLE_NGROK,
+)
+USE_X_FORWARDED_HOST = TRUST_PROXY_HEADERS
+SECURE_PROXY_SSL_HEADER = (
+    ("HTTP_X_FORWARDED_PROTO", "https")
+    if TRUST_PROXY_HEADERS
+    else None
+)
 
 
 # Application definition

@@ -40,6 +40,7 @@ Django backend for a car-parts marketplace with REST APIs and real-time chat.
 SECRET_KEY=change-me
 DEBUG=True
 TIME_ZONE=Asia/Riyadh
+ENABLE_NGROK=False
 DB_ENGINE=postgres
 DB_NAME=auto_spare_db
 DB_USER=postgres
@@ -53,6 +54,7 @@ CHAT_PRESENCE_TTL_SECONDS=75
 CHAT_TYPING_TTL_SECONDS=8
 CHAT_HEARTBEAT_INTERVAL_SECONDS=20
 ALLOWED_HOSTS=127.0.0.1,localhost
+CSRF_TRUSTED_ORIGINS=
 ```
 
 ## Setup
@@ -64,6 +66,31 @@ pip install -r requirements.txt
 python manage.py migrate
 python manage.py runserver
 ```
+
+## Ngrok Setup
+
+To expose the backend through an ngrok URL:
+
+1. Set `ENABLE_NGROK=True` in `.env`.
+2. Start Django on a reachable local port:
+
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
+
+3. Start ngrok against the same port:
+
+```bash
+ngrok http 8000
+```
+
+With `ENABLE_NGROK=True`, Django automatically:
+
+- accepts common ngrok hostnames such as `*.ngrok-free.dev` in `ALLOWED_HOSTS`
+- trusts ngrok HTTPS forwarding headers for correct absolute URLs
+- trusts common ngrok HTTPS origins for CSRF checks
+
+If you use a custom tunnel domain, add it explicitly to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
 
 ## Docker Stack
 

@@ -20,6 +20,7 @@ class ApiUser(AbstractUser):
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
     chat_push_enabled = models.BooleanField(default=True)
     chat_message_preview_enabled = models.BooleanField(default=True)
+    chat_last_seen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

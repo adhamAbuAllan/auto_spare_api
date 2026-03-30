@@ -1,5 +1,7 @@
 from rest_framework import serializers
 
+from chat.runtime import get_globally_connected_user_ids
+
 from .models import (
     ApiUser,
     Conversation,
@@ -165,9 +167,19 @@ class MessageSerializer(serializers.ModelSerializer):
 
 
 class UserBriefSerializer(serializers.ModelSerializer):
+    is_online = serializers.SerializerMethodField()
+    last_seen_at = serializers.DateTimeField(source="chat_last_seen_at", read_only=True)
+
     class Meta:
         model = ApiUser
-        fields = ["id", "name", "avatar"]
+        fields = ["id", "name", "avatar", "is_online", "last_seen_at"]
+
+    def get_is_online(self, obj):
+        online_user_ids = self.context.get("_online_user_ids")
+        if online_user_ids is None:
+            online_user_ids = get_globally_connected_user_ids() or set()
+            self.context["_online_user_ids"] = online_user_ids
+        return obj.id in online_user_ids
 
 
 class ConversationParticipantReadSerializer(serializers.ModelSerializer):
@@ -251,8 +263,8 @@ class PartRequestBriefSerializer(serializers.ModelSerializer):
 
 class MessageStatusReadSerializer(serializers.ModelSerializer):
     conversation_id = serializers.IntegerField(source="message.conversation_id", read_only=True)
-    message_id = serializers.IntegerField(source="message_id", read_only=True)
-    user_id = serializers.IntegerField(source="user_id", read_only=True)
+    message_id = serializers.IntegerField(read_only=True)
+    user_id = serializers.IntegerField(read_only=True)
 
     class Meta:
         model = MessageStatus

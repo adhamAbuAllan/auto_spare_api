@@ -1,5 +1,8 @@
+import logging
 from datetime import datetime
 
+from asgiref.sync import async_to_sync
+from channels.layers import get_channel_layer
 from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery, Value
 from django.db.models.functions import Coalesce
 from django.http import JsonResponse
@@ -44,10 +47,53 @@ from .serializers import (
 from chat.services import create_message_with_statuses, get_default_delivered_user_ids
 
 
+logger = logging.getLogger(__name__)
+
+
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def health(request):
     return JsonResponse({"status": "ok"})
+
+
+def _chat_group_name(conversation_id):
+    return f"chat_{int(conversation_id)}"
+
+
+def _broadcast_chat_event(conversation_id, event_type, payload):
+    channel_layer = get_channel_layer()
+    if not channel_layer:
+        return
+
+    try:
+        async_to_sync(channel_layer.group_send)(
+            _chat_group_name(conversation_id),
+            {
+                "type": event_type,
+                **payload,
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "Unable to broadcast chat event %s for conversation %s: %s",
+            event_type,
+            conversation_id,
+            exc,
+        )
+
+
+def _broadcast_created_message(message_payload, status_events):
+    _broadcast_chat_event(
+        message_payload["conversation_id"],
+        "message_created",
+        {"message": message_payload},
+    )
+    for status_event in status_events:
+        _broadcast_chat_event(
+            status_event["conversation_id"],
+            "message_status",
+            status_event,
+        )
 
 
 class ApiUserViewSet(
@@ -285,7 +331,7 @@ class MessageViewSet(
         }
 
         try:
-            payload, _ = create_message_with_statuses(
+            payload, status_events = create_message_with_statuses(
                 conversation_id=conversation.id,
                 sender=request.user,
                 text=serializer.validated_data.get("text", ""),
@@ -299,6 +345,7 @@ class MessageViewSet(
         except ValueError as exc:
             raise ValidationError({"detail": str(exc)}) from exc
 
+        _broadcast_created_message(payload, status_events)
         headers = self.get_success_headers({"id": payload["id"]})
         return Response(payload, status=201, headers=headers)
 
@@ -328,7 +375,18 @@ class MessageStatusViewSet(
             user=self.request.user,
         ).exists():
             raise PermissionDenied("You are not a participant in this conversation.")
-        serializer.save(user=self.request.user)
+        instance = serializer.save(user=self.request.user)
+        _broadcast_chat_event(
+            message.conversation_id,
+            "message_status",
+            {
+                "conversation_id": int(message.conversation_id),
+                "message_id": int(message.id),
+                "user_id": int(instance.user_id),
+                "status": instance.status,
+                "updated_at": instance.updated_at.isoformat(),
+            },
+        )
 
 
 class MobileDeviceViewSet(

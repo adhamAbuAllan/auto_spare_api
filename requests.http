@@ -27,8 +27,8 @@ Content-Type: {{contentType}}
 
 
 {
-  "username": "chatseller_20260322214419",
-  "password": "test1234"
+  "username": "userf",
+  "password": "123123"
 }
 
 ### Auth - Refresh (JWT)
@@ -61,13 +61,13 @@ Accept: {{accept}}
 
 {
   "email": "user3@example.com",
-  "username": "user3",
+  "username": "usera",
   "name": "User Three",
   "phone": "+15551234569",
   "city": "Riyadh",
   "role": "user",
   "rating": null,
-  "password": "test1234"
+  "password": "123123"
 }
 
 ### Users - List

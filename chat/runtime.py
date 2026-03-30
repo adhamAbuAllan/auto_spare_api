@@ -19,6 +19,7 @@ _redis_client = None
 _redis_next_retry_at = 0.0
 _memory_presence = defaultdict(dict)
 _memory_typing = defaultdict(dict)
+_memory_user_presence = defaultdict(dict)
 _memory_lock = threading.Lock()
 
 
@@ -29,6 +30,7 @@ def reset_runtime_state():
     with _memory_lock:
         _memory_presence.clear()
         _memory_typing.clear()
+        _memory_user_presence.clear()
 
 
 def _runtime_backend():
@@ -70,6 +72,10 @@ def _presence_key(conversation_id):
 
 def _typing_key(conversation_id):
     return f"chat:typing:{int(conversation_id)}"
+
+
+def _global_presence_key():
+    return "chat:presence:users"
 
 
 def _mark_redis_failure(exc, *, now=None):
@@ -147,6 +153,26 @@ def _active_memory_user_ids(bucket, conversation_id, *, now=None):
     return {user_id for user_id, _ in conversation_bucket.values()}
 
 
+def _active_memory_connected_user_ids(*, now=None):
+    current = _now_ts(now)
+    active_user_ids = set()
+
+    for user_id, connection_ids in list(_memory_user_presence.items()):
+        expired_ids = [
+            connection_id
+            for connection_id, expires_at in connection_ids.items()
+            if expires_at <= current
+        ]
+        for connection_id in expired_ids:
+            connection_ids.pop(connection_id, None)
+        if connection_ids:
+            active_user_ids.add(int(user_id))
+        else:
+            _memory_user_presence.pop(int(user_id), None)
+
+    return active_user_ids
+
+
 def add_connected_user(conversation_id, user_id, connection_id, *, now=None):
     conversation_id = int(conversation_id)
     user_id = int(user_id)
@@ -171,6 +197,71 @@ def add_connected_user(conversation_id, user_id, connection_id, *, now=None):
     except Exception as exc:
         _mark_redis_failure(exc, now=current)
         return False
+
+
+def add_globally_connected_user(user_id, connection_id, *, now=None):
+    user_id = int(user_id)
+    connection_id = str(connection_id)
+    current = _now_ts(now)
+    expires_at = current + _presence_ttl_seconds()
+    member = _member(user_id, connection_id)
+
+    if _memory_enabled():
+        with _memory_lock:
+            before_users = _active_memory_connected_user_ids(now=current)
+            _memory_user_presence[user_id][connection_id] = expires_at
+            after_users = _active_memory_connected_user_ids(now=current)
+
+        was_online = user_id in before_users
+        is_online = user_id in after_users
+        return {
+            "user_id": user_id,
+            "is_online": is_online,
+            "changed": was_online != is_online,
+        }
+
+    client = _get_redis_client(now=current)
+    if not client:
+        return {
+            "user_id": user_id,
+            "is_online": False,
+            "changed": False,
+        }
+
+    try:
+        key = _global_presence_key()
+        before_users = {
+            parsed[0]
+            for parsed in (
+                _parse_member(member_value)
+                for member_value in _get_active_redis_members(client, key, now=current)
+            )
+            if parsed is not None
+        }
+        client.zadd(key, {member: expires_at})
+        _touch_key_expiry(client, key, _presence_ttl_seconds())
+        after_users = {
+            parsed[0]
+            for parsed in (
+                _parse_member(member_value)
+                for member_value in _get_active_redis_members(client, key, now=current)
+            )
+            if parsed is not None
+        }
+        was_online = user_id in before_users
+        is_online = user_id in after_users
+        return {
+            "user_id": user_id,
+            "is_online": is_online,
+            "changed": was_online != is_online,
+        }
+    except Exception as exc:
+        _mark_redis_failure(exc, now=current)
+        return {
+            "user_id": user_id,
+            "is_online": False,
+            "changed": False,
+        }
 
 
 def remove_connected_user(conversation_id, user_id, connection_id):
@@ -206,6 +297,73 @@ def remove_connected_user(conversation_id, user_id, connection_id):
         return False
 
 
+def remove_globally_connected_user(user_id, connection_id, *, now=None):
+    user_id = int(user_id)
+    connection_id = str(connection_id)
+    current = _now_ts(now)
+    member = _member(user_id, connection_id)
+
+    if _memory_enabled():
+        with _memory_lock:
+            before_users = _active_memory_connected_user_ids(now=current)
+            user_connections = _memory_user_presence.get(user_id)
+            if user_connections is not None:
+                user_connections.pop(connection_id, None)
+                if not user_connections:
+                    _memory_user_presence.pop(user_id, None)
+            after_users = _active_memory_connected_user_ids(now=current)
+
+        was_online = user_id in before_users
+        is_online = user_id in after_users
+        return {
+            "user_id": user_id,
+            "is_online": is_online,
+            "changed": was_online != is_online,
+        }
+
+    client = _get_redis_client(now=current)
+    if not client:
+        return {
+            "user_id": user_id,
+            "is_online": False,
+            "changed": False,
+        }
+
+    try:
+        key = _global_presence_key()
+        before_users = {
+            parsed[0]
+            for parsed in (
+                _parse_member(member_value)
+                for member_value in _get_active_redis_members(client, key, now=current)
+            )
+            if parsed is not None
+        }
+        client.zrem(key, member)
+        after_users = {
+            parsed[0]
+            for parsed in (
+                _parse_member(member_value)
+                for member_value in _get_active_redis_members(client, key, now=current)
+            )
+            if parsed is not None
+        }
+        was_online = user_id in before_users
+        is_online = user_id in after_users
+        return {
+            "user_id": user_id,
+            "is_online": is_online,
+            "changed": was_online != is_online,
+        }
+    except Exception as exc:
+        _mark_redis_failure(exc, now=current)
+        return {
+            "user_id": user_id,
+            "is_online": False,
+            "changed": False,
+        }
+
+
 def get_connected_user_ids(conversation_id, *, now=None):
     conversation_id = int(conversation_id)
 
@@ -219,6 +377,27 @@ def get_connected_user_ids(conversation_id, *, now=None):
 
     try:
         members = _get_active_redis_members(client, _presence_key(conversation_id), now=now)
+        return {
+            parsed[0]
+            for parsed in (_parse_member(member) for member in members)
+            if parsed is not None
+        }
+    except Exception as exc:
+        _mark_redis_failure(exc, now=now)
+        return None
+
+
+def get_globally_connected_user_ids(*, now=None):
+    if _memory_enabled():
+        with _memory_lock:
+            return _active_memory_connected_user_ids(now=now)
+
+    client = _get_redis_client(now=now)
+    if not client:
+        return None
+
+    try:
+        members = _get_active_redis_members(client, _global_presence_key(), now=now)
         return {
             parsed[0]
             for parsed in (_parse_member(member) for member in members)

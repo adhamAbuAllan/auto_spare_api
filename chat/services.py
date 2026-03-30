@@ -13,7 +13,7 @@ from api.models import (
     MessageStatus,
 )
 
-from .runtime import get_connected_user_ids
+from .runtime import get_connected_user_ids, get_globally_connected_user_ids
 
 
 VALID_MESSAGE_TYPES = {choice[0] for choice in Message.MESSAGE_TYPES}
@@ -29,11 +29,16 @@ def serialize_message_status(status):
     }
 
 
-def serialize_user(user):
+def serialize_user(user, *, online_user_ids=None):
+    if online_user_ids is None:
+        online_user_ids = get_globally_connected_user_ids() or set()
+
     return {
         "id": user.id,
         "name": user.name,
         "avatar": user.avatar.url if user.avatar else None,
+        "is_online": user.id in online_user_ids,
+        "last_seen_at": user.chat_last_seen_at.isoformat() if user.chat_last_seen_at else None,
     }
 
 

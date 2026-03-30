@@ -1,8 +1,13 @@
+from datetime import timedelta
 from pathlib import Path
+from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
+
+from chat.runtime import add_globally_connected_user, reset_runtime_state
 
 from .models import (
     ApiUser,
@@ -113,8 +118,12 @@ class PartRequestApiTests(ApiTestCase):
     def setUp(self):
         self.user = self.create_user()
         self.client.force_authenticate(user=self.user)
-        self.status = PartRequestStatus.objects.create(
-            code="open", label="Open", is_terminal=False
+        self.status, _ = PartRequestStatus.objects.get_or_create(
+            code="awaiting",
+            defaults={
+                "label": "Awaiting",
+                "is_terminal": False,
+            },
         )
 
     def test_create_and_list_part_request(self):
@@ -177,6 +186,13 @@ class ConversationApiTests(ApiTestCase):
             email="seller@example.com",
             role="supplier",
         )
+        self.status, _ = PartRequestStatus.objects.get_or_create(
+            code="awaiting",
+            defaults={
+                "label": "Awaiting",
+                "is_terminal": False,
+            },
+        )
         self.client.force_authenticate(user=self.buyer)
         create_response = self.client.post(
             "/api/conversations/",
@@ -211,6 +227,25 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["results"][0]["last_message"]["id"], self.seller_message.id)
         self.assertEqual(payload["results"][0]["unread_count"], 1)
+
+    @override_settings(CHANNEL_LAYER_BACKEND="memory")
+    def test_list_conversations_returns_participant_presence(self):
+        reset_runtime_state()
+        self.addCleanup(reset_runtime_state)
+        self.seller.chat_last_seen_at = timezone.now() - timedelta(hours=2)
+        self.seller.save(update_fields=["chat_last_seen_at"])
+        add_globally_connected_user(self.seller.id, "seller-mobile")
+
+        response = self.client.get("/api/conversations/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        participants = payload["results"][0]["participants"]
+        seller_participant = next(
+            item for item in participants if item["user"]["id"] == self.seller.id
+        )
+        self.assertTrue(seller_participant["user"]["is_online"])
+        self.assertIsNotNone(seller_participant["user"]["last_seen_at"])
 
     def test_list_messages_returns_paginated_results(self):
         response = self.client.get(
@@ -252,19 +287,36 @@ class ConversationApiTests(ApiTestCase):
             },
         )
 
+    def test_http_message_create_broadcasts_websocket_events(self):
+        with patch("api.views._broadcast_created_message") as broadcast_mock:
+            response = self.client.post(
+                "/api/messages/",
+                data={
+                    "conversation": self.conversation.id,
+                    "message_type": "text",
+                    "text": "Created through HTTP",
+                    "client_timestamp": "2026-03-23T10:05:00Z",
+                },
+                format="json",
+            )
+
+        self.assertEqual(response.status_code, 201)
+        broadcast_mock.assert_called_once()
+
+        payload, status_events = broadcast_mock.call_args.args
+        self.assertEqual(payload["conversation_id"], self.conversation.id)
+        self.assertEqual(payload["text"], "Created through HTTP")
+        self.assertEqual(len(status_events), 1)
+        self.assertEqual(status_events[0]["status"], MessageStatus.STATUS_SENT)
+
     def test_http_product_message_returns_product_payload(self):
-        product_status = PartRequestStatus.objects.create(
-            code="available",
-            label="Available",
-            is_terminal=False,
-        )
         product = PartRequest.objects.create(
             requester=self.seller,
             title="OEM grille",
             description="Clean condition",
             min_price="200.00",
             max_price="350.00",
-            status=product_status,
+            status=self.status,
             city="Riyadh",
         )
 
