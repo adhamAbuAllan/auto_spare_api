@@ -7,6 +7,8 @@ from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.authentication import JWTAuthentication
 from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
+from api.translation import normalize_language_code
+
 
 @sync_to_async
 def authenticate_token(raw_token):
@@ -30,6 +32,9 @@ class JwtAuthMiddleware(BaseMiddleware):
     async def __call__(self, scope, receive, send):
         query_string = parse_qs(scope["query_string"].decode())
         scope["auth_error"] = None
+        scope["translation_language"] = normalize_language_code(
+            (query_string.get("lang") or [None])[0]
+        )
 
         token = query_string.get("token")
         if token:

@@ -8,3 +8,5 @@ channels==4.1.0
 channels-redis==4.2.0
 daphne>=4,<5
 redis==6.4.0
+firebase-admin==7.1.0
+google-cloud-translate==3.25.0

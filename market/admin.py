@@ -10,9 +10,15 @@ class PartImageInline(admin.TabularInline):
 
 @admin.register(PartRequest)
 class PartRequestAdmin(admin.ModelAdmin):
-    list_display = ("id", "title", "requester", "status", "created_at")
-    list_filter = ("status", "created_at")
-    search_fields = ("title", "description")
+    list_display = ("id", "title", "requester", "car_model", "status", "created_at")
+    list_filter = ("status", "car_model__make", "created_at")
+    search_fields = (
+        "title",
+        "description",
+        "requester__username",
+        "car_model__name",
+        "car_model__make__name",
+    )
     inlines = [PartImageInline]
     ordering = ("-created_at",)
 

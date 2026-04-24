@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from dotenv import load_dotenv
@@ -68,7 +69,6 @@ SECRET_KEY = os.getenv(
 DEBUG = _env_bool(os.getenv("DEBUG"), default=True)
 
 ENABLE_NGROK = _env_bool(os.getenv("ENABLE_NGROK"), default=False)
-
 ALLOWED_HOSTS = _env_list(
     "ALLOWED_HOSTS",
     "127.0.0.1,localhost,testserver",
@@ -126,6 +126,8 @@ INSTALLED_APPS = [
     'chat',
     'subscriptions',
     'api',
+    'django_extensions',
+
 ]
 
 MIDDLEWARE = [
@@ -253,11 +255,26 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
     "DEFAULT_PAGINATION_CLASS": "api.pagination.DefaultPagination",
+    "EXCEPTION_HANDLER": "api.exceptions.custom_exception_handler",
     "PAGE_SIZE": 20,
 }
 
 SIMPLE_JWT = {
     "SIGNING_KEY": os.getenv("JWT_SIGNING_KEY", SECRET_KEY),
+    "ACCESS_TOKEN_LIFETIME": timedelta(
+        minutes=_env_int(os.getenv("JWT_ACCESS_LIFETIME_MINUTES"), default=30)
+    ),
+    "REFRESH_TOKEN_LIFETIME": timedelta(
+        days=_env_int(os.getenv("JWT_REFRESH_LIFETIME_DAYS"), default=90)
+    ),
+    "ROTATE_REFRESH_TOKENS": _env_bool(
+        os.getenv("JWT_ROTATE_REFRESH_TOKENS"),
+        default=False,
+    ),
+    "BLACKLIST_AFTER_ROTATION": _env_bool(
+        os.getenv("JWT_BLACKLIST_AFTER_ROTATION"),
+        default=False,
+    ),
 }
 
 CHAT_MAX_MEDIA_BYTES = int(os.getenv("CHAT_MAX_MEDIA_BYTES", str(5 * 1024 * 1024)))
@@ -269,12 +286,35 @@ CHAT_ALLOWED_MEDIA_TYPES = tuple(
     item.strip()
     for item in os.getenv(
         "CHAT_ALLOWED_MEDIA_TYPES",
-        "text/plain,image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4,audio/mpeg,audio/ogg",
+        "text/plain,image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4,"
+        "audio/mpeg,audio/mp4,audio/aac,audio/x-m4a,audio/mp4a-latm,audio/ogg,"
+        "audio/wav,audio/x-wav,audio/webm",
     ).split(",")
     if item.strip()
 )
 
 CHAT_LOG_LEVEL = os.getenv("CHAT_LOG_LEVEL", "INFO").upper()
+FCM_SERVICE_ACCOUNT_FILE = os.getenv("FCM_SERVICE_ACCOUNT_FILE", "").strip()
+FCM_ANDROID_MESSAGE_CHANNEL_ID = os.getenv(
+    "FCM_ANDROID_MESSAGE_CHANNEL_ID",
+    "chat_messages",
+).strip() or "chat_messages"
+FCM_ANDROID_ACTIVITY_CHANNEL_ID = os.getenv(
+    "FCM_ANDROID_ACTIVITY_CHANNEL_ID",
+    "chat_activity",
+).strip() or "chat_activity"
+TRANSLATION_ENABLED = _env_bool(os.getenv("TRANSLATION_ENABLED"), default=False)
+TRANSLATION_PROVIDER = os.getenv("TRANSLATION_PROVIDER", "google").strip().lower()
+TRANSLATION_SUPPORTED_LANGUAGES = tuple(
+    item.strip().lower()
+    for item in os.getenv("TRANSLATION_SUPPORTED_LANGUAGES", "en,ar,he").split(",")
+    if item.strip()
+)
+TRANSLATION_GOOGLE_LOCATION = os.getenv(
+    "TRANSLATION_GOOGLE_LOCATION",
+    "global",
+).strip() or "global"
+GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
 
 LOGGING = {
     "version": 1,

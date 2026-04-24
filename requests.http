@@ -9,9 +9,9 @@
 # To use chained requests, run them in order. 
 # If you want to run any request directly, set the manual IDs below and use the "manual" versions.
 
-@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc0MjE0MTIxLCJpYXQiOjE3NzQyMTM4MjEsImp0aSI6IjlhOTU3MDlhZjlhYzRhYjlhY2QyNzk5MjcxNzk1NzUzIiwidXNlcl9pZCI6IjIifQ.S27mqmWpSQRcdlQN4jFX2tj5oN1bP_hNTtIhVXwzd2s
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ0b2tlbl90eXBlIjoiYWNjZXNzIiwiZXhwIjoxNzc1MjUzODQ3LCJpYXQiOjE3NzUyNTM1NDcsImp0aSI6ImU2MTQ1NjU0YWMxNDRjZDI5OGM3MTA3ZTQ2ZDk1ZGRjIiwidXNlcl9pZCI6IjIifQ.KLoHL3mxQLA2TThVm57UlH0IVZ-Ov_pUVSRZmngGiaU
 @userId = 3
-@partStatusId = 1
+@partStatusId = 6
 @partRequestId = 1
 @conversationId = 2
 @messageId = 1
@@ -40,8 +40,14 @@ Content-Type: {{contentType}}
 }
 
 ### Me - Get Profile
+# @name getMe
 GET {{baseUrl}}/api/me/
-Authorization: Bearer {{accessToken}}
+Authorization: Bearer {{login.response.body.access}}
+
+### Part Request Status - List
+# @name listPartStatuses
+GET {{baseUrl}}/api/part-request-statuses/
+Authorization: Bearer {{login.response.body.access}}
 
 ### Me - Update Profile
 PATCH {{baseUrl}}/api/me/
@@ -115,6 +121,50 @@ Authorization: Bearer {{accessToken}}
   "city": "Riyadh"
 }
 
+### Part Request - Create With Two Images (multipart)
+# Run "Auth - Login" first, then copy the new access token into @accessToken.
+# Run "Me - Get Profile" and copy the returned numeric "id" into @userId.
+# Run "Part Request Status - List" and copy a real status id into @partStatusId.
+# Raw multipart bodies are more reliable with manual variables than chained response placeholders.
+# This request is the clean backend-only upload test for request images.
+# @name createPartRequestWithTwoImages
+POST {{baseUrl}}/api/part-requests/
+Content-Type: multipart/form-data; boundary=AutoSpareRequestBoundary
+Authorization: Bearer {{accessToken}}
+Accept: {{accept}}
+
+--AutoSpareRequestBoundary
+Content-Disposition: form-data; name="requester"
+
+{{userId}}
+--AutoSpareRequestBoundary
+Content-Disposition: form-data; name="title"
+
+HTTP multipart image upload check
+--AutoSpareRequestBoundary
+Content-Disposition: form-data; name="description"
+
+This request should create the part request and save two image rows plus two files in media/part_requests.
+--AutoSpareRequestBoundary
+Content-Disposition: form-data; name="status"
+
+{{partStatusId}}
+--AutoSpareRequestBoundary
+Content-Disposition: form-data; name="city"
+
+Cairo
+--AutoSpareRequestBoundary
+Content-Disposition: form-data; name="images"; filename="sample_part_1.jpg"
+Content-Type: image/jpeg
+
+< ./fixtures/sample_part.jpg
+--AutoSpareRequestBoundary
+Content-Disposition: form-data; name="images"; filename="sample_part_2.jpg"
+Content-Type: image/jpeg
+
+< ./fixtures/sample_part.jpg
+--AutoSpareRequestBoundary--
+
 ### Part Image - Add (multipart, raw boundary)
 POST {{baseUrl}}/api/part-images/
 Content-Type: multipart/form-data; boundary=----WebKitFormBoundary7MA4YWxkTrZu0gW
@@ -128,7 +178,7 @@ Content-Disposition: form-data; name="part_request"
 Content-Disposition: form-data; name="image"; filename="sample_part.jpg"
 Content-Type: image/jpeg
 
-< /Volumes/MyDisk/mac/lib/Projects/DjangoProjects/auto_spare_api/fixtures/sample_part.jpg
+< ./fixtures/sample_part.jpg
 ------WebKitFormBoundary7MA4YWxkTrZu0gW--
 
 ### Conversation - Create
@@ -229,4 +279,19 @@ Authorization: Bearer {{accessToken}}
   "message": {{messageId}},
   "user": {{userId}},
   "status": "sent"
+}
+
+### Mobile Device - Send Test Request Notification
+# Use a real authenticated user's access token and a device that belongs to that user.
+# If mobile_device_id or request_id is omitted, the backend will try the latest available match.
+POST {{baseUrl}}/api/mobile-devices/test-request-notification/
+Content-Type: {{contentType}}
+Authorization: Bearer {{accessToken}}
+
+{
+  "mobile_device_id": 9,
+  "request_id": 18,
+  "request_title": "Push notification test",
+  "request_description": "This is a backend-triggered test request notification.",
+  "seller_name": "Backend Test"
 }

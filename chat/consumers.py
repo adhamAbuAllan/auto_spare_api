@@ -1,6 +1,8 @@
 import json
 import logging
+from copy import deepcopy
 
+from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.conf import settings
@@ -8,6 +10,9 @@ from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 
 from api.models import ApiUser, ConversationParticipant, PartRequest, Message
+from api.translation import localize_message_response_data
+from .broadcasting import broadcast_inbox_message, chat_group_name, inbox_group_name
+from .push_notifications import send_chat_message_push_notifications
 from .runtime import (
     add_connected_user,
     add_globally_connected_user,
@@ -28,7 +33,46 @@ logger = logging.getLogger("chat.events")
 trace_logger = logging.getLogger("chat.trace")
 
 
-class ChatConsumer(AsyncWebsocketConsumer):
+class PresenceAwareConsumer(AsyncWebsocketConsumer):
+    async def broadcast_user_presence(self, presence_event):
+        if not presence_event.get("changed"):
+            return
+
+        conversation_ids = await self.get_presence_target_conversation_ids()
+        payload = {
+            "type": "user_presence",
+            "user_id": int(presence_event["user_id"]),
+            "is_online": bool(presence_event["is_online"]),
+            "last_seen_at": presence_event.get("last_seen_at"),
+        }
+        for conversation_id in conversation_ids:
+            await self.channel_layer.group_send(chat_group_name(conversation_id), payload)
+
+    @database_sync_to_async
+    def get_presence_target_conversation_ids(self):
+        return list(
+            ConversationParticipant.objects.filter(user=self.user)
+            .values_list("conversation_id", flat=True)
+            .distinct()
+        )
+
+    @database_sync_to_async
+    def _persist_user_last_seen(self, seen_at):
+        ApiUser.objects.filter(pk=self.user.id).update(chat_last_seen_at=seen_at)
+
+    async def persist_user_last_seen(self, *, force):
+        seen_at = timezone.now()
+        last_persisted_at = getattr(self, "_last_presence_persisted_at", None)
+        if not force and last_persisted_at is not None:
+            if (seen_at - last_persisted_at).total_seconds() < 60:
+                return last_persisted_at.isoformat()
+
+        await self._persist_user_last_seen(seen_at)
+        self._last_presence_persisted_at = seen_at
+        return seen_at.isoformat()
+
+
+class ChatConsumer(PresenceAwareConsumer):
     def should_trace_payloads(self):
         trace_conversation_id = getattr(settings, "CHAT_TRACE_CONVERSATION_ID", None)
         if trace_conversation_id is None:
@@ -71,6 +115,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def connect(self):
         self.group_name = None
         self.user = self.scope.get("user")
+        self.target_language = self.scope.get("translation_language")
         self.conversation_id = self.scope["url_route"]["kwargs"]["conversation_id"]
         self.connection_id = self.channel_name
         self._last_presence_persisted_at = None
@@ -83,7 +128,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
             await self.close(code=4401)
             return
 
-        self.group_name = f"chat_{self.conversation_id}"
+        self.group_name = chat_group_name(self.conversation_id)
 
         is_allowed = await self.is_participant()
         if not is_allowed:
@@ -116,7 +161,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
             )
         )
         await self.broadcast_user_presence(presence_event)
-        for status_event in await self.mark_delivered():
+        delivered_events = await self.mark_delivered()
+        for status_event in delivered_events:
             await self.channel_layer.group_send(
                 self.group_name,
                 {
@@ -300,6 +346,14 @@ class ChatConsumer(AsyncWebsocketConsumer):
                     **status_event,
                 },
             )
+        await sync_to_async(
+            broadcast_inbox_message,
+            thread_sensitive=False,
+        )(message["message"])
+        await sync_to_async(
+            send_chat_message_push_notifications,
+            thread_sensitive=False,
+        )(message["message"])
 
     async def process_typing(self, *, is_typing):
         typing_payload = await self.update_typing(is_typing)
@@ -352,6 +406,16 @@ class ChatConsumer(AsyncWebsocketConsumer):
     async def message_created(self, event):
         payload = dict(event)
         payload.pop("type", None)
+        message_payload = payload.get("message")
+        if isinstance(message_payload, dict):
+            payload["message"] = deepcopy(message_payload)
+            await sync_to_async(
+                localize_message_response_data,
+                thread_sensitive=False,
+            )(
+                payload["message"],
+                target_language=self.target_language,
+            )
         await self.send(text_data=json.dumps({"type": "message.created", **payload}))
 
     async def conversation_typing(self, event):
@@ -373,20 +437,6 @@ class ChatConsumer(AsyncWebsocketConsumer):
         payload = dict(event)
         payload.pop("type", None)
         await self.send(text_data=json.dumps({"type": "user.presence", **payload}))
-
-    async def broadcast_user_presence(self, presence_event):
-        if not presence_event.get("changed"):
-            return
-
-        conversation_ids = await self.get_presence_target_conversation_ids()
-        payload = {
-            "type": "user_presence",
-            "user_id": int(presence_event["user_id"]),
-            "is_online": bool(presence_event["is_online"]),
-            "last_seen_at": presence_event.get("last_seen_at"),
-        }
-        for conversation_id in conversation_ids:
-            await self.channel_layer.group_send(f"chat_{conversation_id}", payload)
 
     @database_sync_to_async
     def is_participant(self):
@@ -489,25 +539,114 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def update_seen(self):
         return mark_conversation_seen(self.conversation_id, self.user)
 
-    @database_sync_to_async
-    def get_presence_target_conversation_ids(self):
-        return list(
-            ConversationParticipant.objects.filter(user=self.user)
-            .values_list("conversation_id", flat=True)
-            .distinct()
+class InboxConsumer(PresenceAwareConsumer):
+    async def connect(self):
+        self.user = self.scope.get("user")
+        self.target_language = self.scope.get("translation_language")
+        self.connection_id = self.channel_name
+        self._last_presence_persisted_at = None
+        if not self.user or self.user.is_anonymous:
+            logger.info(
+                "chat.inbox.connect.rejected reason=unauthenticated connection_id=%s",
+                self.connection_id,
+            )
+            await self.close(code=4401)
+            return
+
+        self.group_name = inbox_group_name(self.user.id)
+        await self.channel_layer.group_add(self.group_name, self.channel_name)
+        last_seen_at = await self.persist_user_last_seen(force=True)
+        presence_event = await self.mark_connected()
+        presence_event["last_seen_at"] = last_seen_at
+        await self.accept()
+        logger.info(
+            "chat.inbox.connect.accepted user_id=%s connection_id=%s",
+            self.user.id,
+            self.connection_id,
+        )
+        await self.broadcast_user_presence(presence_event)
+
+    async def disconnect(self, close_code):
+        if not getattr(self, "group_name", None):
+            return
+
+        await self.channel_layer.group_discard(self.group_name, self.channel_name)
+        last_seen_at = await self.persist_user_last_seen(force=True)
+        presence_event = await self.mark_disconnected()
+        presence_event["last_seen_at"] = last_seen_at
+        logger.info(
+            "chat.inbox.disconnect user_id=%s connection_id=%s close_code=%s",
+            getattr(self.user, "id", None),
+            self.connection_id,
+            close_code,
+        )
+        await self.broadcast_user_presence(presence_event)
+
+    async def receive(self, text_data=None, bytes_data=None):
+        if not text_data:
+            return
+
+        try:
+            payload = json.loads(text_data)
+        except json.JSONDecodeError:
+            await self.send(
+                text_data=json.dumps(
+                    {
+                        "type": "error",
+                        "detail": "Payload must be valid JSON.",
+                    }
+                )
+            )
+            return
+
+        event_type = payload.get("type")
+        if event_type != "ping":
+            await self.send(
+                text_data=json.dumps(
+                    {
+                        "type": "error",
+                        "detail": f"Unsupported event type: {event_type!r}.",
+                    }
+                )
+            )
+            return
+
+        last_seen_at = await self.persist_user_last_seen(force=False)
+        presence_event = await self.touch_presence()
+        presence_event["last_seen_at"] = last_seen_at
+        await self.broadcast_user_presence(presence_event)
+        await self.send(
+            text_data=json.dumps(
+                {
+                    "type": "pong",
+                    "server_timestamp": timezone.now().isoformat(),
+                }
+            )
         )
 
+    async def inbox_message(self, event):
+        payload = dict(event)
+        payload.pop("type", None)
+        message_payload = payload.get("message")
+        if isinstance(message_payload, dict):
+            payload["message"] = deepcopy(message_payload)
+            await sync_to_async(
+                localize_message_response_data,
+                thread_sensitive=False,
+            )(
+                payload["message"],
+                target_language=self.target_language,
+            )
+        await self.send(text_data=json.dumps({"type": "inbox.message", **payload}))
+
     @database_sync_to_async
-    def _persist_user_last_seen(self, seen_at):
-        ApiUser.objects.filter(pk=self.user.id).update(chat_last_seen_at=seen_at)
+    def mark_connected(self):
+        return add_globally_connected_user(self.user.id, self.connection_id)
 
-    async def persist_user_last_seen(self, *, force):
-        seen_at = timezone.now()
-        last_persisted_at = getattr(self, "_last_presence_persisted_at", None)
-        if not force and last_persisted_at is not None:
-            if (seen_at - last_persisted_at).total_seconds() < 60:
-                return last_persisted_at.isoformat()
+    @database_sync_to_async
+    def mark_disconnected(self):
+        return remove_globally_connected_user(self.user.id, self.connection_id)
 
-        await self._persist_user_last_seen(seen_at)
-        self._last_presence_persisted_at = seen_at
-        return seen_at.isoformat()
+    @database_sync_to_async
+    def touch_presence(self):
+        return add_globally_connected_user(self.user.id, self.connection_id)

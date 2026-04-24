@@ -1,13 +1,14 @@
 from django.conf import settings
 from django.contrib.auth.models import AbstractUser
 from django.db import models
+from django.utils.text import slugify
 
 
 class ApiUser(AbstractUser):
     ROLE_USER = "user"
     ROLE_SUPPLIER = "supplier"
     ROLE_CHOICES = [
-        (ROLE_USER, "User"),
+        (ROLE_USER, "User"),    
         (ROLE_SUPPLIER, "Supplier"),
     ]
 
@@ -23,6 +24,7 @@ class ApiUser(AbstractUser):
     chat_last_seen_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+ 
     def __str__(self):
         label = self.name or self.email or self.username
         return f"{label} ({self.role})"
@@ -36,6 +38,82 @@ class SparePart(models.Model):
 
     def __str__(self):
         return self.name
+
+
+class CarMake(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    slug = models.SlugField(max_length=140, unique=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+
+class CarModel(models.Model):
+    make = models.ForeignKey(
+        CarMake,
+        on_delete=models.CASCADE,
+        related_name="models",
+    )
+    name = models.CharField(max_length=120)
+    slug = models.SlugField(max_length=160)
+    image_url = models.URLField(blank=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["make__name", "name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["make", "slug"],
+                name="unique_car_model_per_make_slug",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = slugify(self.name)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.make.name} {self.name}"
+
+
+class UserCarModel(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="car_model_links",
+    )
+    car_model = models.ForeignKey(
+        CarModel,
+        on_delete=models.CASCADE,
+        related_name="user_links",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "car_model"],
+                name="unique_user_car_model_link",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "car_model"]),
+            models.Index(fields=["car_model"]),
+        ]
+
+    def __str__(self):
+        return f"{self.user_id}:{self.car_model_id}"
 
 
 class PartRequestStatus(models.Model):
@@ -57,13 +135,22 @@ class PartRequest(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="part_requests"
     )
     title = models.CharField(max_length=255)
+    title_language = models.CharField(max_length=12, blank=True)
     description = models.TextField(blank=True)
+    description_language = models.CharField(max_length=12, blank=True)
     min_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     max_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.ForeignKey(
         PartRequestStatus, on_delete=models.PROTECT, related_name="part_requests"
     )
-    city = models.CharField(max_length=120, blank=True)
+    car_model = models.ForeignKey(
+        CarModel,
+        on_delete=models.PROTECT,
+        related_name="part_requests",
+        null=True,
+        blank=True,
+    )
+    city = models.CharField(max_length=120, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -80,6 +167,37 @@ class PartImage(models.Model):
 
     def __str__(self):
         return f"Image for {self.part_request_id}"
+
+
+class TranslationCache(models.Model):
+    entity_type = models.CharField(max_length=50)
+    entity_id = models.PositiveBigIntegerField()
+    field_name = models.CharField(max_length=50)
+    target_language = models.CharField(max_length=12)
+    source_language = models.CharField(max_length=12, blank=True)
+    source_hash = models.CharField(max_length=64)
+    translated_text = models.TextField()
+    provider = models.CharField(max_length=50)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["entity_type", "entity_id", "field_name", "target_language"],
+                name="unique_translation_cache_entry",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["entity_type", "entity_id"]),
+            models.Index(fields=["target_language"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.entity_type}:{self.entity_id}:{self.field_name}"
+            f"->{self.target_language}"
+        )
 
 
 class Conversation(models.Model):
@@ -121,6 +239,66 @@ class ConversationParticipant(models.Model):
 
     def __str__(self):
         return f"{self.user_id} in {self.conversation_id}"
+
+
+class PartRequestAccess(models.Model):
+    STATUS_PENDING = "pending"
+    STATUS_ACCEPTED = "accepted"
+    STATUS_REJECTED = "rejected"
+    STATUS_REVOKED = "revoked"
+    STATUS_CHOICES = [
+        (STATUS_PENDING, "Pending"),
+        (STATUS_ACCEPTED, "Accepted"),
+        (STATUS_REJECTED, "Rejected"),
+        (STATUS_REVOKED, "Revoked"),
+    ]
+
+    part_request = models.ForeignKey(
+        PartRequest,
+        on_delete=models.CASCADE,
+        related_name="access_requests",
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="part_request_accesses",
+    )
+    conversation = models.ForeignKey(
+        Conversation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="part_request_accesses",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    resolved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="resolved_part_request_accesses",
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["part_request", "user"],
+                name="unique_part_request_access_per_user",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "status"]),
+            models.Index(fields=["part_request", "status"]),
+            models.Index(fields=["conversation", "status"]),
+        ]
+
+    def __str__(self):
+        return f"access:{self.part_request_id}:{self.user_id}={self.status}"
+
+
 
 
 class MobileDevice(models.Model):
@@ -177,6 +355,7 @@ class Message(models.Model):
 
     message_type = models.CharField(max_length=20, choices=MESSAGE_TYPES, default="text")
     text = models.TextField(blank=True)
+    text_language = models.CharField(max_length=12, blank=True)
     product = models.ForeignKey(
         PartRequest,
         on_delete=models.SET_NULL,
@@ -189,6 +368,7 @@ class Message(models.Model):
     )
     client_timestamp = models.DateTimeField()
     server_timestamp = models.DateTimeField(auto_now_add=True)
+    edited_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
 
     class Meta:
@@ -198,6 +378,33 @@ class Message(models.Model):
 
     def __str__(self):
         return f"Message {self.id} in {self.conversation_id}"
+
+
+class MessageHiddenForUser(models.Model):
+    message = models.ForeignKey(
+        Message, on_delete=models.CASCADE, related_name="hidden_for_users"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="hidden_messages",
+    )
+    hidden_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["message", "user"],
+                name="unique_hidden_message_per_user",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["user", "hidden_at"]),
+            models.Index(fields=["message", "user"]),
+        ]
+
+    def __str__(self):
+        return f"hide:{self.message_id}:{self.user_id}"
 
 
 class MessageAttachment(models.Model):

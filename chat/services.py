@@ -5,11 +5,13 @@ from django.core.files.base import ContentFile
 from django.db import transaction
 from django.utils import timezone
 
+from api.translation import stamp_message_language
 from api.models import (
     Conversation,
     ConversationParticipant,
     Message,
     MessageAttachment,
+    MessageHiddenForUser,
     MessageStatus,
 )
 
@@ -17,6 +19,28 @@ from .runtime import get_connected_user_ids, get_globally_connected_user_ids
 
 
 VALID_MESSAGE_TYPES = {choice[0] for choice in Message.MESSAGE_TYPES}
+
+
+def _load_message_with_relations(message_id):
+    return (
+        Message.objects.select_related(
+            "sender",
+            "product",
+            "product__status",
+            "product__car_model__make",
+            "reply_to__sender",
+            "reply_to__product",
+            "reply_to__product__status",
+            "reply_to__product__car_model__make",
+        )
+        .prefetch_related(
+            "attachments",
+            "statuses__message",
+            "statuses",
+            "reply_to__hidden_for_users",
+        )
+        .get(pk=message_id)
+    )
 
 
 def serialize_message_status(status):
@@ -49,8 +73,30 @@ def serialize_product(product):
     return {
         "id": product.id,
         "title": product.title,
+        "title_language": product.title_language or None,
         "min_price": str(product.min_price) if product.min_price is not None else None,
         "max_price": str(product.max_price) if product.max_price is not None else None,
+        "status": product.status_id,
+        "status_details": {
+            "id": product.status_id,
+            "code": product.status.code,
+            "label": product.status.label,
+            "is_terminal": product.status.is_terminal,
+            "created_at": product.status.created_at.isoformat(),
+        },
+        "car_model_details": (
+            {
+                "id": product.car_model.id,
+                "make_id": product.car_model.make_id,
+                "make_name": product.car_model.make.name,
+                "name": product.car_model.name,
+                "display_name": f"{product.car_model.make.name} {product.car_model.name}",
+                "image_url": product.car_model.image_url,
+                "is_active": product.car_model.is_active,
+            }
+            if product.car_model_id
+            else None
+        ),
     }
 
 
@@ -72,24 +118,18 @@ def serialize_reply(message):
         "id": message.id,
         "sender": serialize_user(message.sender),
         "text": message.text,
+        "text_language": message.text_language or None,
         "product": serialize_product(message.product),
         "client_timestamp": message.client_timestamp.isoformat(),
         "server_timestamp": message.server_timestamp.isoformat(),
+        "edited_at": message.edited_at.isoformat() if message.edited_at else None,
+        "is_deleted": bool(message.is_deleted),
     }
 
 
 def serialize_message_payload(message):
     if not hasattr(message, "sender"):
-        message = (
-            Message.objects.select_related(
-                "sender",
-                "product",
-                "reply_to__sender",
-                "reply_to__product",
-            )
-            .prefetch_related("attachments", "statuses__message", "statuses")
-            .get(pk=message.pk)
-        )
+        message = _load_message_with_relations(message.pk)
 
     return {
         "id": message.id,
@@ -97,11 +137,14 @@ def serialize_message_payload(message):
         "sender": serialize_user(message.sender),
         "message_type": message.message_type,
         "text": message.text,
+        "text_language": message.text_language or None,
         "product": serialize_product(message.product),
         "reply_to": serialize_reply(message.reply_to),
         "media": [serialize_attachment(item) for item in message.attachments.all()],
         "client_timestamp": message.client_timestamp.isoformat(),
         "server_timestamp": message.server_timestamp.isoformat(),
+        "edited_at": message.edited_at.isoformat() if message.edited_at else None,
+        "is_deleted": bool(message.is_deleted),
         "statuses": [
             serialize_message_status(status)
             for status in message.statuses.select_related("message").order_by("user_id")
@@ -262,26 +305,70 @@ def create_message_with_statuses(
             reply_to=reply_to,
             client_timestamp=client_timestamp,
         )
+        stamp_message_language(message)
+        message.save(update_fields=["text_language"])
         _create_attachments(message, files=files, media_files=media_files)
         mark_message_as_latest(message)
         statuses = initialize_message_statuses(message, delivered_user_ids=delivered_user_ids)
-        message = (
-            Message.objects.select_related(
-                "sender",
-                "product",
-                "reply_to__sender",
-                "reply_to__product",
-            )
-            .prefetch_related("attachments", "statuses__message", "statuses")
-            .get(pk=message.pk)
-        )
+        message = _load_message_with_relations(message.pk)
 
     return serialize_message_payload(message), statuses
 
 
+def update_text_message(message, *, text):
+    normalized_text = (text or "").strip()
+    if not normalized_text:
+        raise ValueError("Text is required to edit a message.")
+    if message.is_deleted:
+        raise ValueError("Deleted messages cannot be edited.")
+    if message.message_type != "text":
+        raise ValueError("Only text messages can be edited.")
+    if message.product_id is not None or message.attachments.exists():
+        raise ValueError("Only plain text messages can be edited.")
+
+    if message.text == normalized_text:
+        return serialize_message_payload(_load_message_with_relations(message.pk))
+
+    Message.objects.filter(pk=message.pk).update(
+        text=normalized_text,
+        text_language=stamp_message_language(Message(text=normalized_text)).text_language,
+        edited_at=timezone.now(),
+    )
+    return serialize_message_payload(_load_message_with_relations(message.pk))
+
+
+def delete_message_for_everyone(message):
+    with transaction.atomic():
+        attachments = list(message.attachments.all())
+        for attachment in attachments:
+            if attachment.file:
+                attachment.file.delete(save=False)
+        if attachments:
+            message.attachments.all().delete()
+
+        Message.objects.filter(pk=message.pk).update(
+            text="",
+            text_language="",
+            product=None,
+            reply_to=None,
+            edited_at=None,
+            is_deleted=True,
+        )
+
+    return serialize_message_payload(_load_message_with_relations(message.pk))
+
+
+def hide_message_for_user(message, user):
+    MessageHiddenForUser.objects.get_or_create(message=message, user=user)
+
+
 def mark_conversation_delivered(conversation_id, user):
     statuses = []
-    messages = Message.objects.filter(conversation_id=conversation_id).exclude(sender=user)
+    messages = (
+        Message.objects.filter(conversation_id=conversation_id)
+        .exclude(sender=user)
+        .exclude(hidden_for_users__user=user)
+    )
 
     for message in messages:
         status, created = MessageStatus.objects.get_or_create(
@@ -309,7 +396,11 @@ def mark_conversation_seen(conversation_id, user):
     ).update(last_read_at=seen_at)
 
     statuses = []
-    messages = Message.objects.filter(conversation_id=conversation_id).exclude(sender=user)
+    messages = (
+        Message.objects.filter(conversation_id=conversation_id)
+        .exclude(sender=user)
+        .exclude(hidden_for_users__user=user)
+    )
 
     for message in messages:
         status, created = MessageStatus.objects.get_or_create(
