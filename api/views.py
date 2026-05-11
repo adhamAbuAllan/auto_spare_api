@@ -1,9 +1,10 @@
 import logging
 from datetime import datetime
+from pathlib import Path
 from django.db import transaction
 from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery, Value
 from django.db.models.functions import Coalesce
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -16,6 +17,7 @@ from rest_framework.response import Response
 from .models import (
     ApiUser,
     CarMake,
+    CarModel,
     Conversation,
     ConversationParticipant,
     Message,
@@ -27,6 +29,7 @@ from .models import (
     PartRequestAccess,
     PartRequestStatus,
     SparePart,
+    UserReport,
 )
 from .pagination import MessageCursorPagination
 from .serializers import (
@@ -46,7 +49,11 @@ from .serializers import (
     PartRequestStatusSerializer,
     PublicUserProfileSerializer,
     SparePartSerializer,
+    UserReportAdminUpdateSerializer,
+    UserReportCreateSerializer,
+    UserReportSerializer,
 )
+from .car_catalog_sync import CarCatalogSyncService, CarImagesApiError
 from .translation import (
     localize_conversation_response_data,
     localize_message_response_data,
@@ -73,6 +80,23 @@ from chat.push_notifications import (
 
 
 logger = logging.getLogger(__name__)
+_PRIVACY_POLICY_FILE = (
+    Path.home() / "StudioProjects" / "mta_auto_spare" / "docs" / "index.html"
+)
+_car_catalog_sync_service = CarCatalogSyncService()
+
+
+def _is_admin_user(user):
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and (user.is_staff or user.is_superuser)
+    )
+
+
+def _ensure_admin_user(user):
+    if not _is_admin_user(user):
+        raise PermissionDenied("Only admin users can perform this action.")
 
 
 def create_and_broadcast_system_chat_message(*, conversation_id, sender, text):
@@ -97,6 +121,18 @@ def health(request):
     return JsonResponse({"status": "ok"})
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def privacy_policy_page(request):
+    if not _PRIVACY_POLICY_FILE.exists():
+        raise Http404("Privacy policy page is not available.")
+
+    return HttpResponse(
+        _PRIVACY_POLICY_FILE.read_text(encoding="utf-8"),
+        content_type="text/html; charset=utf-8",
+    )
+
+
 class ApiUserViewSet(
     mixins.RetrieveModelMixin,
     mixins.ListModelMixin,
@@ -115,6 +151,46 @@ class ApiUserViewSet(
         if self.action == "retrieve":
             return PublicUserProfileSerializer
         return ApiUserSerializer
+
+    @action(detail=True, methods=["post"])
+    def block(self, request, pk=None):
+        _ensure_admin_user(request.user)
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            raise ValidationError({"detail": "You cannot block your own account."})
+
+        reason = str(request.data.get("reason", "") or "").strip()
+        user.is_active = False
+        user.blocked_at = timezone.now()
+        user.blocked_reason = reason
+        user.blocked_by = request.user
+        user.save(
+            update_fields=[
+                "is_active",
+                "blocked_at",
+                "blocked_reason",
+                "blocked_by",
+            ]
+        )
+        return Response(ApiUserSerializer(user, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"])
+    def unblock(self, request, pk=None):
+        _ensure_admin_user(request.user)
+        user = self.get_object()
+        user.is_active = True
+        user.blocked_at = None
+        user.blocked_reason = ""
+        user.blocked_by = None
+        user.save(
+            update_fields=[
+                "is_active",
+                "blocked_at",
+                "blocked_reason",
+                "blocked_by",
+            ]
+        )
+        return Response(ApiUserSerializer(user, context=self.get_serializer_context()).data)
 
 
 class SparePartViewSet(
@@ -167,6 +243,16 @@ class PartRequestViewSet(
     def get_queryset(self):
         qs = (
             PartRequest.objects.select_related("requester", "status", "car_model__make")
+            .annotate(
+                accepted_access_user_id=Subquery(
+                    PartRequestAccess.objects.filter(
+                        part_request=OuterRef("pk"),
+                        status=PartRequestAccess.STATUS_ACCEPTED,
+                    )
+                    .order_by("-updated_at", "-id")
+                    .values("user_id")[:1]
+                )
+            )
             .prefetch_related(
                 "images",
                 Prefetch(
@@ -205,6 +291,16 @@ class PartRequestViewSet(
             qs = qs.filter(status_id=status_id)
         if status_code:
             qs = qs.filter(status__code=status_code)
+
+        user = getattr(self.request, "user", None)
+        if user is None or not user.is_authenticated:
+            qs = qs.filter(accepted_access_user_id__isnull=True)
+        else:
+            qs = qs.filter(
+                Q(accepted_access_user_id__isnull=True)
+                | Q(requester_id=user.id)
+                | Q(accepted_access_user_id=user.id)
+            )
 
         return qs
 
@@ -286,6 +382,29 @@ class PartRequestViewSet(
         for image in self.request.FILES.getlist("images"):
             PartImage.objects.create(part_request=part_request, image=image)
 
+    def _ensure_car_model_image(self, part_request):
+        if not part_request.car_model_id:
+            return
+
+        car_model = getattr(part_request, "car_model", None)
+        if car_model is None:
+            car_model = CarModel.objects.select_related("make").filter(
+                pk=part_request.car_model_id
+            ).first()
+            if car_model is None:
+                return
+            part_request.car_model = car_model
+
+        try:
+            _car_catalog_sync_service.ensure_model_image(car_model)
+        except CarImagesApiError as exc:
+            logger.warning(
+                "Unable to populate image for car model %s while handling part request %s: %s",
+                car_model.id,
+                part_request.id,
+                exc,
+            )
+
     def _sync_part_images(self, part_request):
         sync_images = str(self.request.data.get("sync_images", "")).strip().lower() in {
             "1",
@@ -308,6 +427,7 @@ class PartRequestViewSet(
 
     def perform_create(self, serializer):
         part_request = serializer.save(requester=self.request.user)
+        self._ensure_car_model_image(part_request)
         self._create_part_images(part_request)
         send_request_created_push_notifications(part_request)
 
@@ -318,6 +438,7 @@ class PartRequestViewSet(
             serializer.validated_data,
         )
         part_request = serializer.save()
+        self._ensure_car_model_image(part_request)
         if part_request.requester_id == self.request.user.id:
             self._sync_part_images(part_request)
             return
@@ -944,6 +1065,96 @@ class MessageStatusViewSet(
             "message_status",
             status_event,
         )
+
+
+class UserReportViewSet(
+    mixins.ListModelMixin,
+    mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_class(self):
+        if self.action == "create":
+            return UserReportCreateSerializer
+        if self.action in {"update", "partial_update"}:
+            return UserReportAdminUpdateSerializer
+        return UserReportSerializer
+
+    def get_queryset(self):
+        queryset = UserReport.objects.select_related(
+            "reporter",
+            "reported_user",
+            "reviewed_by",
+        )
+        if not _is_admin_user(self.request.user):
+            queryset = queryset.filter(reporter=self.request.user)
+
+        reported_user_id = self.request.query_params.get("reported_user")
+        reporter_id = self.request.query_params.get("reporter")
+        report_status = self.request.query_params.get("status")
+
+        if reported_user_id:
+            queryset = queryset.filter(reported_user_id=reported_user_id)
+        if reporter_id:
+            queryset = queryset.filter(reporter_id=reporter_id)
+        if report_status:
+            queryset = queryset.filter(status=report_status)
+
+        return queryset.order_by("-created_at", "-id")
+
+    def perform_create(self, serializer):
+        serializer.save(reporter=self.request.user)
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        report = serializer.save(reporter=request.user)
+        response_serializer = UserReportSerializer(
+            report,
+            context=self.get_serializer_context(),
+        )
+        headers = self.get_success_headers(response_serializer.data)
+        return Response(
+            response_serializer.data,
+            status=status.HTTP_201_CREATED,
+            headers=headers,
+        )
+
+    def update(self, request, *args, **kwargs):
+        return self.partial_update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        _ensure_admin_user(request.user)
+        report = self.get_object()
+        serializer = self.get_serializer(
+            report,
+            data=request.data,
+            partial=True,
+        )
+        serializer.is_valid(raise_exception=True)
+        next_status = serializer.validated_data.get("status", report.status)
+        admin_notes = serializer.validated_data.get("admin_notes", report.admin_notes)
+
+        report.status = next_status
+        report.admin_notes = admin_notes
+        report.reviewed_by = request.user
+        report.reviewed_at = timezone.now()
+        report.save(
+            update_fields=[
+                "status",
+                "admin_notes",
+                "reviewed_by",
+                "reviewed_at",
+                "updated_at",
+            ]
+        )
+        response_serializer = UserReportSerializer(
+            report,
+            context=self.get_serializer_context(),
+        )
+        return Response(response_serializer.data)
 
 
 class MobileDeviceViewSet(

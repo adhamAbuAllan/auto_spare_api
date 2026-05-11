@@ -17,11 +17,30 @@ Including another URLconf
 from django.conf import settings
 from django.conf.urls.static import static
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.static import serve
+from api.views import health, privacy_policy_page
 
 urlpatterns = [
+    path('health/', health, name='root_health'),
+    path('privacy-policy/', privacy_policy_page, name='privacy_policy'),
     path('api/', include('api.urls')),
     path('admin/', admin.site.urls),
 ]
 
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+
+if settings.MEDIA_URL:
+    media_url = settings.MEDIA_URL
+    if media_url.startswith("/"):
+        media_url = media_url[1:]
+    if media_url and not media_url.endswith("/"):
+        media_url = f"{media_url}/"
+
+    urlpatterns += [
+        re_path(
+            rf"^{media_url}(?P<path>.*)$",
+            serve,
+            {"document_root": settings.MEDIA_ROOT},
+        )
+    ]

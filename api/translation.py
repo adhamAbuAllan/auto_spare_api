@@ -1,4 +1,5 @@
 import logging
+import re
 from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha256
@@ -26,6 +27,55 @@ _ARABIC_BLOCKS = (
     (0xFE70, 0xFEFF),
 )
 _HEBREW_BLOCKS = ((0x0590, 0x05FF),)
+_PART_REQUEST_STATUS_LABELS = {
+    "awaiting": {
+        "en": "Awaiting",
+        "ar": "بانتظار",
+        "he": "ממתין",
+    },
+    "in_progress": {
+        "en": "In Progress",
+        "ar": "قيد التنفيذ",
+        "he": "בטיפול",
+    },
+    "cancelled": {
+        "en": "Cancelled",
+        "ar": "ملغي",
+        "he": "בוטל",
+    },
+}
+_PART_REQUEST_STATUS_ENGLISH_TO_CODE = {
+    translations["en"].strip().lower(): code
+    for code, translations in _PART_REQUEST_STATUS_LABELS.items()
+}
+_KNOWN_SYSTEM_MESSAGE_PATTERNS = {
+    "request_access": re.compile(
+        r'^Requested access to manage the status of "(?P<title>.+)"\.$'
+    ),
+    "approve_access": re.compile(
+        r'^Approved access to manage the status of "(?P<title>.+)"\.$'
+    ),
+    "reject_access": re.compile(
+        r'^Rejected access to manage the status of "(?P<title>.+)"\.$'
+    ),
+    "status_updated": re.compile(
+        r'^Updated the status of "(?P<title>.+)" from "(?P<from_label>.+)" to "(?P<to_label>.+)"\.$'
+    ),
+}
+_KNOWN_SYSTEM_MESSAGE_TEMPLATES = {
+    "ar": {
+        "request_access": 'طلب الوصول لإدارة حالة "{title}".',
+        "approve_access": 'تمت الموافقة على الوصول لإدارة حالة "{title}".',
+        "reject_access": 'تم رفض الوصول لإدارة حالة "{title}".',
+        "status_updated": 'تم تحديث حالة "{title}" من "{from_label}" إلى "{to_label}".',
+    },
+    "he": {
+        "request_access": 'התקבלה בקשת גישה לניהול הסטטוס של "{title}".',
+        "approve_access": 'אושרה גישה לניהול הסטטוס של "{title}".',
+        "reject_access": 'נדחתה הגישה לניהול הסטטוס של "{title}".',
+        "status_updated": 'הסטטוס של "{title}" עודכן מ"{from_label}" ל"{to_label}".',
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -63,6 +113,63 @@ def normalize_language_code(value):
     base_language = normalized.split("-", 1)[0]
     if base_language in SUPPORTED_TRANSLATION_LANGUAGES:
         return base_language
+
+    return None
+
+
+def localize_part_request_status_label(*, code=None, label=None, target_language=None):
+    normalized_target_language = normalize_language_code(target_language)
+    normalized_code = str(code or "").strip().lower()
+    fallback_label = str(label or "").strip()
+
+    if not normalized_code and fallback_label:
+        normalized_code = _PART_REQUEST_STATUS_ENGLISH_TO_CODE.get(
+            fallback_label.lower()
+        ) or ""
+
+    if not normalized_code:
+        return fallback_label
+
+    translations = _PART_REQUEST_STATUS_LABELS.get(normalized_code)
+    if not translations:
+        return fallback_label
+
+    if not normalized_target_language:
+        return fallback_label or translations["en"]
+
+    return translations.get(normalized_target_language) or fallback_label or translations["en"]
+
+
+def _localize_known_system_message(text, *, target_language):
+    normalized_target_language = normalize_language_code(target_language)
+    if not normalized_target_language or normalized_target_language == "en":
+        return None
+
+    templates = _KNOWN_SYSTEM_MESSAGE_TEMPLATES.get(normalized_target_language)
+    if not templates:
+        return None
+
+    normalized_text = str(text or "").strip()
+    if not normalized_text:
+        return None
+
+    for message_key, pattern in _KNOWN_SYSTEM_MESSAGE_PATTERNS.items():
+        match = pattern.match(normalized_text)
+        if not match:
+            continue
+
+        values = match.groupdict()
+        if "from_label" in values:
+            values["from_label"] = localize_part_request_status_label(
+                label=values["from_label"],
+                target_language=normalized_target_language,
+            )
+        if "to_label" in values:
+            values["to_label"] = localize_part_request_status_label(
+                label=values["to_label"],
+                target_language=normalized_target_language,
+            )
+        return templates[message_key].format(**values)
 
     return None
 
@@ -464,6 +571,11 @@ def localize_message_payloads(payloads, *, target_language):
         payload["translated_text"] = (
             text_translation.translated_text if text_translation else None
         )
+        if payload["translated_text"] is None:
+            payload["translated_text"] = _localize_known_system_message(
+                payload.get("text"),
+                target_language=normalized_target_language,
+            )
 
     if product_payloads:
         localize_part_request_payloads(product_payloads, target_language=normalized_target_language)

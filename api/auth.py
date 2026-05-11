@@ -10,6 +10,7 @@ class ClearTokenObtainPairSerializer(TokenObtainPairSerializer):
         "user_not_found": "No user found with this username.",
         "invalid_password": "The password you entered is incorrect.",
         "inactive_account": "This account is inactive. Please contact support.",
+        "blocked_account": "This account has been blocked by an administrator.",
     }
 
     def validate(self, attrs):
@@ -29,6 +30,12 @@ class ClearTokenObtainPairSerializer(TokenObtainPairSerializer):
             raise AuthenticationFailed(
                 self.error_messages["invalid_password"],
                 code="invalid_password",
+            )
+
+        if not user.is_active and getattr(user, "blocked_at", None):
+            raise AuthenticationFailed(
+                self.error_messages["blocked_account"],
+                code="blocked_account",
             )
 
         if not user.is_active:

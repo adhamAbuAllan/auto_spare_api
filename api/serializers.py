@@ -1,4 +1,5 @@
 from django.db import IntegrityError, transaction
+from django.utils.text import slugify
 from rest_framework import serializers
 
 from chat.runtime import get_globally_connected_user_ids
@@ -23,9 +24,14 @@ from .models import (
     SparePart,
     Subscription,
     TypingStatus,
+    UserReport,
     UserCarModel,
 )
-from .translation import stamp_part_request_languages
+from .translation import (
+    localize_part_request_status_label,
+    resolve_requested_translation_language,
+    stamp_part_request_languages,
+)
 
 
 class ApiUserSerializer(serializers.ModelSerializer):
@@ -40,6 +46,7 @@ class ApiUserSerializer(serializers.ModelSerializer):
         required=False,
         write_only=True,
     )
+    is_admin = serializers.SerializerMethodField()
 
     class Meta:
         model = ApiUser
@@ -53,11 +60,25 @@ class ApiUserSerializer(serializers.ModelSerializer):
             "city",
             "role",
             "rating",
+            "is_active",
+            "is_admin",
+            "blocked_at",
+            "blocked_reason",
             "supported_car_model_ids",
             "created_at",
             "password",
         ]
-        read_only_fields = ["id", "created_at"]
+        read_only_fields = [
+            "id",
+            "is_active",
+            "is_admin",
+            "blocked_at",
+            "blocked_reason",
+            "created_at",
+        ]
+
+    def get_is_admin(self, obj):
+        return obj.is_admin
 
     def validate_supported_car_model_ids(self, value):
         model_ids = [int(item) for item in value]
@@ -196,12 +217,33 @@ class PartRequestStatusSerializer(serializers.ModelSerializer):
         fields = ["id", "code", "label", "is_terminal", "created_at"]
         read_only_fields = ["id", "created_at"]
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["label"] = localize_part_request_status_label(
+            code=instance.code,
+            label=data.get("label"),
+            target_language=resolve_requested_translation_language(
+                self.context.get("request")
+            ),
+        )
+        return data
+
 
 class PartRequestSerializer(serializers.ModelSerializer):
     car_model = serializers.PrimaryKeyRelatedField(
         queryset=CarModel.objects.filter(is_active=True),
         required=False,
         allow_null=True,
+    )
+    car_make_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        write_only=True,
+    )
+    car_model_name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        write_only=True,
     )
     city = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     images = serializers.SerializerMethodField()
@@ -228,6 +270,8 @@ class PartRequestSerializer(serializers.ModelSerializer):
             "status",
             "status_details",
             "car_model",
+            "car_make_name",
+            "car_model_name",
             "car_model_details",
             "city",
             "images",
@@ -279,6 +323,44 @@ class PartRequestSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        raw_make_name = attrs.pop("car_make_name", None)
+        raw_model_name = attrs.pop("car_model_name", None)
+        car_make_name = str(raw_make_name or "").strip()
+        car_model_name = str(raw_model_name or "").strip()
+        has_custom_car_fields = bool(car_make_name or car_model_name)
+        has_selected_car_model = attrs.get("car_model") is not None
+
+        if has_custom_car_fields and has_selected_car_model:
+            raise serializers.ValidationError(
+                {
+                    "car_model": (
+                        "Select an existing car model or enter a new make and model, not both."
+                    )
+                }
+            )
+
+        if has_custom_car_fields:
+            errors = {}
+            if not car_make_name:
+                errors["car_make_name"] = "car_make_name is required when adding a new car."
+            if not car_model_name:
+                errors["car_model_name"] = "car_model_name is required when adding a new car."
+            if errors:
+                raise serializers.ValidationError(errors)
+            attrs["car_model"] = self._resolve_or_create_car_model(
+                make_name=car_make_name,
+                model_name=car_model_name,
+            )
+
+        if (
+            attrs.get("car_model") is None
+            and not has_custom_car_fields
+            and self.instance is None
+        ):
+            raise serializers.ValidationError(
+                {"car_model": "car_model is required unless a new car make and model are provided."}
+            )
+
         if "city" in attrs:
             city = attrs.get("city")
             if city is None:
@@ -348,6 +430,58 @@ class PartRequestSerializer(serializers.ModelSerializer):
             ]
         )
         return part_request
+
+    def _resolve_or_create_car_model(self, *, make_name, model_name):
+        normalized_make_name = str(make_name or "").strip()
+        normalized_model_name = str(model_name or "").strip()
+        make_slug = slugify(normalized_make_name)
+        model_slug = slugify(normalized_model_name)
+
+        if not make_slug or not model_slug:
+            raise serializers.ValidationError(
+                {
+                    "car_model_name": "A valid car make and model are required."
+                }
+            )
+
+        car_make = (
+            CarMake.objects.filter(slug=make_slug).first()
+            or CarMake.objects.filter(name__iexact=normalized_make_name).first()
+        )
+        if car_make is None:
+            car_make = CarMake.objects.create(
+                name=normalized_make_name,
+                slug=make_slug,
+            )
+        elif car_make.name != normalized_make_name:
+            car_make.name = normalized_make_name
+            car_make.save(update_fields=["name"])
+
+        car_model = (
+            CarModel.objects.filter(make=car_make, slug=model_slug).first()
+            or CarModel.objects.filter(
+                make=car_make,
+                name__iexact=normalized_model_name,
+            ).first()
+        )
+        if car_model is None:
+            car_model = CarModel.objects.create(
+                make=car_make,
+                name=normalized_model_name,
+                slug=model_slug,
+                is_active=True,
+            )
+        else:
+            changed_fields = []
+            if car_model.name != normalized_model_name:
+                car_model.name = normalized_model_name
+                changed_fields.append("name")
+            if not car_model.is_active:
+                car_model.is_active = True
+                changed_fields.append("is_active")
+            if changed_fields:
+                car_model.save(update_fields=changed_fields)
+        return car_model
 
 
 class PartImageSerializer(serializers.ModelSerializer):
@@ -482,6 +616,7 @@ def _serialize_supported_car_models(user, *, context):
 
 class PublicUserProfileSerializer(UserBriefSerializer):
     supported_car_models = serializers.SerializerMethodField()
+    is_admin = serializers.SerializerMethodField()
 
     class Meta(UserBriefSerializer.Meta):
         model = ApiUser
@@ -491,6 +626,7 @@ class PublicUserProfileSerializer(UserBriefSerializer):
             "city",
             "role",
             "rating",
+            "is_admin",
             "supported_car_models",
             "created_at",
         ]
@@ -498,6 +634,9 @@ class PublicUserProfileSerializer(UserBriefSerializer):
 
     def get_supported_car_models(self, obj):
         return _serialize_supported_car_models(obj, context=self.context)
+
+    def get_is_admin(self, obj):
+        return obj.is_admin
 
 
 class ConversationParticipantReadSerializer(serializers.ModelSerializer):
@@ -767,6 +906,10 @@ class MeSerializer(ApiUserSerializer):
             "city",
             "role",
             "rating",
+            "is_active",
+            "is_admin",
+            "blocked_at",
+            "blocked_reason",
             "chat_push_enabled",
             "chat_message_preview_enabled",
             "supported_car_models",
@@ -779,6 +922,10 @@ class MeSerializer(ApiUserSerializer):
             "username",
             "role",
             "rating",
+            "is_active",
+            "is_admin",
+            "blocked_at",
+            "blocked_reason",
             "created_at",
         ]
 
@@ -942,3 +1089,71 @@ class PaymentSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "created_at"]
+
+
+class UserReportSerializer(serializers.ModelSerializer):
+    reporter_details = RequestAccessUserSerializer(source="reporter", read_only=True)
+    reported_user_details = RequestAccessUserSerializer(
+        source="reported_user",
+        read_only=True,
+    )
+    reviewed_by_details = RequestAccessUserSerializer(
+        source="reviewed_by",
+        read_only=True,
+    )
+
+    class Meta:
+        model = UserReport
+        fields = [
+            "id",
+            "reporter",
+            "reporter_details",
+            "reported_user",
+            "reported_user_details",
+            "reason",
+            "details",
+            "status",
+            "reviewed_by",
+            "reviewed_by_details",
+            "reviewed_at",
+            "admin_notes",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = fields
+
+
+class UserReportCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserReport
+        fields = ["id", "reported_user", "reason", "details"]
+        read_only_fields = ["id"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        request = self.context.get("request")
+        user = getattr(request, "user", None)
+        reported_user = attrs.get("reported_user")
+        if user is not None and reported_user == user:
+            raise serializers.ValidationError(
+                {"reported_user": "You cannot report your own account."}
+            )
+        return attrs
+
+
+
+class UserReportAdminUpdateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserReport
+        fields = ["status", "admin_notes"]
+
+    def validate_status(self, value):
+        allowed_statuses = {
+            UserReport.STATUS_OPEN,
+            UserReport.STATUS_REVIEWED,
+            UserReport.STATUS_DISMISSED,
+            UserReport.STATUS_ACTIONED,
+        }
+        if value not in allowed_statuses:
+            raise serializers.ValidationError("Unsupported report status.")
+        return value

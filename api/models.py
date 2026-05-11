@@ -22,12 +22,29 @@ class ApiUser(AbstractUser):
     chat_push_enabled = models.BooleanField(default=True)
     chat_message_preview_enabled = models.BooleanField(default=True)
     chat_last_seen_at = models.DateTimeField(null=True, blank=True)
+    blocked_at = models.DateTimeField(null=True, blank=True)
+    blocked_reason = models.CharField(max_length=255, blank=True)
+    blocked_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="blocked_accounts",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
  
     def __str__(self):
         label = self.name or self.email or self.username
         return f"{label} ({self.role})"
+
+    @property
+    def is_admin(self):
+        return bool(self.is_staff or self.is_superuser)
+
+    @property
+    def is_blocked(self):
+        return bool(self.blocked_at and not self.is_active)
 
 
 class SparePart(models.Model):
@@ -297,6 +314,55 @@ class PartRequestAccess(models.Model):
 
     def __str__(self):
         return f"access:{self.part_request_id}:{self.user_id}={self.status}"
+
+
+class UserReport(models.Model):
+    STATUS_OPEN = "open"
+    STATUS_REVIEWED = "reviewed"
+    STATUS_DISMISSED = "dismissed"
+    STATUS_ACTIONED = "actioned"
+    STATUS_CHOICES = [
+        (STATUS_OPEN, "Open"),
+        (STATUS_REVIEWED, "Reviewed"),
+        (STATUS_DISMISSED, "Dismissed"),
+        (STATUS_ACTIONED, "Actioned"),
+    ]
+
+    reporter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="filed_user_reports",
+    )
+    reported_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="received_user_reports",
+    )
+    reason = models.CharField(max_length=120)
+    details = models.TextField(blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_OPEN)
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reviewed_user_reports",
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    admin_notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["reporter", "created_at"]),
+            models.Index(fields=["reported_user", "status"]),
+            models.Index(fields=["status", "created_at"]),
+        ]
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"report:{self.reporter_id}->{self.reported_user_id}={self.status}"
 
 
 

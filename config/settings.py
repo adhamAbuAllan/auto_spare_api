@@ -315,6 +315,18 @@ TRANSLATION_GOOGLE_LOCATION = os.getenv(
     "global",
 ).strip() or "global"
 GOOGLE_CLOUD_PROJECT = os.getenv("GOOGLE_CLOUD_PROJECT", "").strip()
+CAR_IMAGES_API_BASE_URL = os.getenv(
+    "CAR_IMAGES_API_BASE_URL",
+    "https://carimagesapi.com/api/v1",
+).strip().rstrip("/")
+CAR_IMAGES_API_TIMEOUT_SECONDS = _env_int(
+    os.getenv("CAR_IMAGES_API_TIMEOUT_SECONDS"),
+    default=20,
+) or 20
+CAR_IMAGES_MEMORY_CACHE_TTL_SECONDS = _env_int(
+    os.getenv("CAR_IMAGES_MEMORY_CACHE_TTL_SECONDS"),
+    default=12 * 60 * 60,
+) or (12 * 60 * 60)
 
 LOGGING = {
     "version": 1,

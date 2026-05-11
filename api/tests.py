@@ -25,8 +25,9 @@ from .models import (
     SparePart,
     TranslationCache,
     UserCarModel,
+    UserReport,
 )
-from .translation import TranslationValue
+from .translation import TranslationValue, localize_part_request_status_label
 
 
 class FakeTranslationProvider:
@@ -407,6 +408,53 @@ class PartRequestApiTests(ApiTestCase):
         payload = response.json()
         self.assertEqual(payload["id"], part_request.id)
         self.assertEqual(payload["title"], "Need bumper")
+
+    def test_list_hides_granted_request_from_other_suppliers(self):
+        owner = self.create_user(username="owner", email="owner@example.com")
+        granted_supplier = self.create_user(
+            username="granted-supplier",
+            email="granted-supplier@example.com",
+            role="supplier",
+        )
+        other_supplier = self.create_user(
+            username="other-supplier",
+            email="other-supplier@example.com",
+            role="supplier",
+        )
+        part_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need alternator",
+            description="Original preferred",
+            status=self.status,
+            city="Riyadh",
+        )
+        PartRequestAccess.objects.create(
+            part_request=part_request,
+            user=granted_supplier,
+            status=PartRequestAccess.STATUS_ACCEPTED,
+            resolved_by=owner,
+            resolved_at=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=other_supplier)
+        other_supplier_response = self.client.get("/api/part-requests/")
+        self.assertEqual(other_supplier_response.status_code, 200)
+        self.assertEqual(other_supplier_response.json()["count"], 0)
+
+        self.client.force_authenticate(user=granted_supplier)
+        granted_supplier_response = self.client.get("/api/part-requests/")
+        self.assertEqual(granted_supplier_response.status_code, 200)
+        self.assertEqual(granted_supplier_response.json()["count"], 1)
+        self.assertEqual(
+            granted_supplier_response.json()["results"][0]["id"],
+            part_request.id,
+        )
+
+        self.client.force_authenticate(user=owner)
+        owner_response = self.client.get("/api/part-requests/")
+        self.assertEqual(owner_response.status_code, 200)
+        self.assertEqual(owner_response.json()["count"], 1)
+        self.assertEqual(owner_response.json()["results"][0]["id"], part_request.id)
 
     def test_create_part_request_accepts_null_city(self):
         response = self.client.post(
@@ -1783,3 +1831,176 @@ class MobileApiTests(ApiTestCase):
             "projects/demo/messages/abc",
         )
         send_mock.assert_called_once()
+
+
+class LocalizationFallbackTests(ApiTestCase):
+    def setUp(self):
+        self.user = self.create_user(username="translator", email="translator@example.com")
+        self.client.force_authenticate(user=self.user)
+        self.awaiting_status = PartRequestStatus.objects.create(
+            code="awaiting",
+            label="Awaiting",
+            is_terminal=False,
+        )
+
+    def test_part_request_statuses_are_localized_without_external_provider(self):
+        response = self.client.get(
+            "/api/part-request-statuses/",
+            HTTP_ACCEPT_LANGUAGE="ar",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(
+            payload["results"][0]["label"],
+            localize_part_request_status_label(
+                code="awaiting",
+                label="Awaiting",
+                target_language="ar",
+            ),
+        )
+
+    def test_known_system_chat_messages_get_deterministic_translation(self):
+        owner = self.create_user(username="owner-ar", email="owner-ar@example.com")
+        supplier = self.create_user(
+            username="supplier-ar",
+            email="supplier-ar@example.com",
+            role="supplier",
+        )
+        conversation = Conversation.objects.create(title="Localized system chat")
+        ConversationParticipant.objects.create(conversation=conversation, user=owner)
+        ConversationParticipant.objects.create(conversation=conversation, user=supplier)
+        Message.objects.create(
+            conversation=conversation,
+            sender=supplier,
+            message_type="text",
+            text='Requested access to manage the status of "Need bumper".',
+            client_timestamp=timezone.now(),
+        )
+
+        self.client.force_authenticate(user=owner)
+        response = self.client.get(
+            f"/api/messages/?conversation_id={conversation.id}",
+            HTTP_ACCEPT_LANGUAGE="ar",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        results = payload["results"] if isinstance(payload, dict) else payload
+        self.assertEqual(len(results), 1)
+        self.assertEqual(
+            results[0]["translated_text"],
+            '\u0637\u0644\u0628 \u0627\u0644\u0648\u0635\u0648\u0644 \u0644\u0625\u062f\u0627\u0631\u0629 \u062d\u0627\u0644\u0629 "Need bumper".',
+        )
+
+
+class UserModerationApiTests(ApiTestCase):
+    def setUp(self):
+        self.admin = self.create_user(username="admin", email="admin@example.com")
+        self.admin.is_staff = True
+        self.admin.save(update_fields=["is_staff"])
+        self.reporter = self.create_user(username="reporter", email="reporter@example.com")
+        self.reported_user = self.create_user(
+            username="reported",
+            email="reported@example.com",
+        )
+
+    def test_user_report_lifecycle_for_reporter_and_admin(self):
+        self.client.force_authenticate(user=self.reporter)
+        create_response = self.client.post(
+            "/api/user-reports/",
+            data={
+                "reported_user": self.reported_user.id,
+                "reason": "Spam",
+                "details": "Repeated unwanted messages.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(create_response.status_code, 201)
+        report = UserReport.objects.get()
+        self.assertEqual(report.reporter_id, self.reporter.id)
+        self.assertEqual(report.reported_user_id, self.reported_user.id)
+        self.assertEqual(report.status, UserReport.STATUS_OPEN)
+
+        reporter_list_response = self.client.get("/api/user-reports/")
+        self.assertEqual(reporter_list_response.status_code, 200)
+        self.assertEqual(reporter_list_response.json()["count"], 1)
+
+        self.client.force_authenticate(user=self.admin)
+        admin_list_response = self.client.get("/api/user-reports/")
+        self.assertEqual(admin_list_response.status_code, 200)
+        self.assertEqual(admin_list_response.json()["count"], 1)
+
+        update_response = self.client.patch(
+            f"/api/user-reports/{report.id}/",
+            data={
+                "status": UserReport.STATUS_ACTIONED,
+                "admin_notes": "User warned and reviewed.",
+            },
+            format="json",
+        )
+
+        self.assertEqual(update_response.status_code, 200)
+        report.refresh_from_db()
+        self.assertEqual(report.status, UserReport.STATUS_ACTIONED)
+        self.assertEqual(report.reviewed_by_id, self.admin.id)
+        self.assertEqual(report.admin_notes, "User warned and reviewed.")
+        self.assertIsNotNone(report.reviewed_at)
+
+    def test_admin_can_block_and_unblock_user_and_blocked_user_cannot_login(self):
+        blocked_user = self.create_user(
+            username="blocked-user",
+            email="blocked-user@example.com",
+            password="secret123",
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        block_response = self.client.post(
+            f"/api/users/{blocked_user.id}/block/",
+            data={"reason": "Fraud investigation"},
+            format="json",
+        )
+
+        self.assertEqual(block_response.status_code, 200)
+        blocked_user.refresh_from_db()
+        self.assertFalse(blocked_user.is_active)
+        self.assertEqual(blocked_user.blocked_reason, "Fraud investigation")
+        self.assertEqual(blocked_user.blocked_by_id, self.admin.id)
+        self.assertIsNotNone(blocked_user.blocked_at)
+
+        self.client.force_authenticate(user=None)
+        blocked_login_response = self.client.post(
+            "/api/token/",
+            data={"username": "blocked-user", "password": "secret123"},
+            format="json",
+        )
+
+        self.assertEqual(blocked_login_response.status_code, 401)
+        self.assertEqual(
+            blocked_login_response.json()["code"],
+            "blocked_account",
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        unblock_response = self.client.post(
+            f"/api/users/{blocked_user.id}/unblock/",
+            format="json",
+        )
+
+        self.assertEqual(unblock_response.status_code, 200)
+        blocked_user.refresh_from_db()
+        self.assertTrue(blocked_user.is_active)
+        self.assertIsNone(blocked_user.blocked_at)
+        self.assertEqual(blocked_user.blocked_reason, "")
+        self.assertIsNone(blocked_user.blocked_by)
+
+        self.client.force_authenticate(user=None)
+        login_response = self.client.post(
+            "/api/token/",
+            data={"username": "blocked-user", "password": "secret123"},
+            format="json",
+        )
+
+        self.assertEqual(login_response.status_code, 200)
+        self.assertIn("access", login_response.json())

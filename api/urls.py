@@ -18,6 +18,7 @@ from .views import (
     PartRequestStatusViewSet,
     PartRequestViewSet,
     SparePartViewSet,
+    UserReportViewSet,
     health,
 )
 
@@ -38,6 +39,7 @@ router.register(
 router.register("messages", MessageViewSet, basename="messages")
 router.register("message-statuses", MessageStatusViewSet, basename="message-statuses")
 router.register("mobile-devices", MobileDeviceViewSet, basename="mobile-devices")
+router.register("user-reports", UserReportViewSet, basename="user-reports")
 
 
 urlpatterns = [
