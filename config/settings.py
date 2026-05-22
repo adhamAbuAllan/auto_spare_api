@@ -13,6 +13,7 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 import os
 from datetime import timedelta
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 from dotenv import load_dotenv
 
@@ -164,8 +165,33 @@ ASGI_APPLICATION = "config.asgi.application"
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 DB_ENGINE = os.getenv("DB_ENGINE", "sqlite").lower()
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
-if DB_ENGINE in {"postgres", "postgresql"}:
+
+def _database_config_from_url(database_url):
+    if not database_url:
+        return None
+
+    parsed = urlparse(database_url)
+    scheme = (parsed.scheme or "").lower()
+    if scheme not in {"postgres", "postgresql", "pgsql"}:
+        return None
+
+    return {
+        "ENGINE": "django.db.backends.postgresql",
+        "NAME": unquote((parsed.path or "").lstrip("/")),
+        "USER": unquote(parsed.username or ""),
+        "PASSWORD": unquote(parsed.password or ""),
+        "HOST": parsed.hostname or "",
+        "PORT": str(parsed.port or "5432"),
+    }
+
+if DATABASE_URL:
+    parsed_database = _database_config_from_url(DATABASE_URL)
+    if parsed_database is None:
+        raise ValueError("DATABASE_URL must use a PostgreSQL scheme.")
+    DATABASES = {"default": parsed_database}
+elif DB_ENGINE in {"postgres", "postgresql"}:
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
@@ -230,6 +256,7 @@ MEDIA_ROOT = BASE_DIR / "media"
 CHANNEL_LAYER_BACKEND = os.getenv("CHANNEL_LAYER_BACKEND", "redis").strip().lower()
 REDIS_HOST = os.getenv("REDIS_HOST", "127.0.0.1")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
 
 if CHANNEL_LAYER_BACKEND in {"memory", "inmemory"}:
     CHANNEL_LAYERS = {
@@ -238,11 +265,12 @@ if CHANNEL_LAYER_BACKEND in {"memory", "inmemory"}:
         }
     }
 else:
+    redis_hosts = [REDIS_URL] if REDIS_URL else [(REDIS_HOST, REDIS_PORT)]
     CHANNEL_LAYERS = {
         "default": {
             "BACKEND": "channels_redis.core.RedisChannelLayer",
             "CONFIG": {
-                "hosts": [(REDIS_HOST, REDIS_PORT)],
+                "hosts": redis_hosts,
             },
         }
     }
