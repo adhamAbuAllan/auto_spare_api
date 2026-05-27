@@ -18,6 +18,8 @@ services:
         value: UTC
       - key: ENABLE_NGROK
         value: "false"
+      - key: TRUST_PROXY_HEADERS
+        value: "true"
       - key: ALLOWED_HOSTS
         value: .onrender.com
       - key: CSRF_TRUSTED_ORIGINS
