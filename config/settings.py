@@ -347,6 +347,15 @@ CAR_IMAGES_API_BASE_URL = os.getenv(
     "CAR_IMAGES_API_BASE_URL",
     "https://carimagesapi.com/api/v1",
 ).strip().rstrip("/")
+CAR_IMAGES_API_PROXY_ENABLED = _env_bool(
+    os.getenv("CAR_IMAGES_API_PROXY_ENABLED"),
+    default=False,
+)
+CAR_IMAGES_API_PROXY_TARGET_BASE_URL = os.getenv(
+    "CAR_IMAGES_API_PROXY_TARGET_BASE_URL",
+    "https://carimagesapi.com/api/v1",
+).strip().rstrip("/")
+CAR_IMAGES_API_PROXY_TOKEN = os.getenv("CAR_IMAGES_API_PROXY_TOKEN", "").strip()
 CAR_IMAGES_API_TIMEOUT_SECONDS = _env_int(
     os.getenv("CAR_IMAGES_API_TIMEOUT_SECONDS"),
     default=20,

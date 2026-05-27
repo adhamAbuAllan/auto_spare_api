@@ -135,12 +135,17 @@ class CarImagesApiClient:
 
     def _request_json(self, path: str) -> dict[str, Any]:
         url = f"{self.base_url}{path}"
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": "auto-spare-api/1.0",
+        }
+        proxy_token = str(getattr(settings, "CAR_IMAGES_API_PROXY_TOKEN", "")).strip()
+        if proxy_token:
+            headers["X-Car-Images-Proxy-Token"] = proxy_token
+
         request = Request(
             url,
-            headers={
-                "Accept": "application/json",
-                "User-Agent": "auto-spare-api/1.0",
-            },
+            headers=headers,
         )
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:

@@ -1,4 +1,4 @@
-from django.urls import include, path
+from django.urls import include, path, re_path
 from rest_framework_simplejwt.views import TokenRefreshView
 from rest_framework.routers import DefaultRouter
 
@@ -21,6 +21,7 @@ from .views import (
     UserReportViewSet,
     health,
 )
+from .car_images_proxy import car_images_api_proxy
 
 router = DefaultRouter()
 router.register("users", ApiUserViewSet, basename="users")
@@ -43,6 +44,7 @@ router.register("user-reports", UserReportViewSet, basename="user-reports")
 
 
 urlpatterns = [
+    re_path(r"^v1/(?P<path>.*)$", car_images_api_proxy, name="car_images_api_proxy"),
     path("chat-tester/", chat_tester, name="chat_tester"),
     path("health/", health, name="health"),
     path("me/", MeView.as_view(), name="me"),

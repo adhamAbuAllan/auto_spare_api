@@ -55,6 +55,12 @@ CHAT_TYPING_TTL_SECONDS=8
 CHAT_HEARTBEAT_INTERVAL_SECONDS=20
 ALLOWED_HOSTS=127.0.0.1,localhost
 CSRF_TRUSTED_ORIGINS=
+CAR_IMAGES_API_BASE_URL=https://carimagesapi.com/api/v1
+CAR_IMAGES_API_PROXY_ENABLED=False
+CAR_IMAGES_API_PROXY_TARGET_BASE_URL=https://carimagesapi.com/api/v1
+CAR_IMAGES_API_PROXY_TOKEN=
+CAR_IMAGES_API_TIMEOUT_SECONDS=20
+CAR_IMAGES_MEMORY_CACHE_TTL_SECONDS=43200
 ```
 
 ## Setup
@@ -91,6 +97,36 @@ With `ENABLE_NGROK=True`, Django automatically:
 - trusts common ngrok HTTPS origins for CSRF checks
 
 If you use a custom tunnel domain, add it explicitly to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
+
+## Testing carimagesapi through ngrok
+
+If Render cannot call `https://carimagesapi.com/api/v1` directly, you can test whether
+the issue is Render's outbound network by routing only the car images API calls through
+your local machine:
+
+1. On your local backend, enable the proxy:
+
+```bash
+CAR_IMAGES_API_PROXY_ENABLED=True
+CAR_IMAGES_API_PROXY_TOKEN=choose-a-long-random-token
+python manage.py runserver 0.0.0.0:8000
+```
+
+2. Start ngrok:
+
+```bash
+ngrok http 8000
+```
+
+3. In Render, keep the app's public base URL unchanged, but set these environment variables:
+
+```bash
+CAR_IMAGES_API_BASE_URL=https://your-ngrok-domain.ngrok-free.app/api/v1
+CAR_IMAGES_API_PROXY_TOKEN=choose-a-long-random-token
+```
+
+With that setup, Render serves the project as usual, but `CarImagesApiClient` fetches
+`/makes` and `/makes/<make>/models` through your ngrok tunnel.
 
 ## Docker Stack
 
