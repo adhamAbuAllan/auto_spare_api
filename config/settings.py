@@ -356,6 +356,16 @@ CAR_IMAGES_API_PROXY_TARGET_BASE_URL = os.getenv(
     "https://carimagesapi.com/api/v1",
 ).strip().rstrip("/")
 CAR_IMAGES_API_PROXY_TOKEN = os.getenv("CAR_IMAGES_API_PROXY_TOKEN", "").strip()
+CAR_IMAGES_API_KEY = os.getenv("CAR_IMAGES_API_KEY", "").strip()
+CAR_IMAGES_API_SECRET = os.getenv("CAR_IMAGES_API_SECRET", "").strip()
+CAR_IMAGES_SIGNED_IMAGE_TTL_SECONDS = _env_int(
+    os.getenv("CAR_IMAGES_SIGNED_IMAGE_TTL_SECONDS"),
+    default=5 * 60,
+) or (5 * 60)
+CAR_IMAGES_IMAGE_WIDTH = os.getenv("CAR_IMAGES_IMAGE_WIDTH", "800").strip() or "800"
+CAR_IMAGES_IMAGE_FORMAT = (
+    os.getenv("CAR_IMAGES_IMAGE_FORMAT", "webp").strip().lower() or "webp"
+)
 CAR_IMAGES_API_TIMEOUT_SECONDS = _env_int(
     os.getenv("CAR_IMAGES_API_TIMEOUT_SECONDS"),
     default=20,

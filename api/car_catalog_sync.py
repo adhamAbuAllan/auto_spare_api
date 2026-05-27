@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import logging
 import threading
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -115,6 +117,34 @@ def select_preferred_model_image_url(model_payload: dict[str, Any]) -> str:
         if url:
             return url
     return ""
+
+
+def build_signed_model_image_url(car_model: CarModel) -> str:
+    api_key = str(getattr(settings, "CAR_IMAGES_API_KEY", "") or "").strip()
+    api_secret = str(getattr(settings, "CAR_IMAGES_API_SECRET", "") or "").strip()
+    if not api_key or not api_secret:
+        return str(car_model.image_url or "").strip()
+
+    ttl_seconds = int(getattr(settings, "CAR_IMAGES_SIGNED_IMAGE_TTL_SECONDS", 300))
+    width = str(getattr(settings, "CAR_IMAGES_IMAGE_WIDTH", "800") or "800").strip()
+    image_format = str(
+        getattr(settings, "CAR_IMAGES_IMAGE_FORMAT", "webp") or "webp"
+    ).strip()
+    params = {
+        "api_key": api_key,
+        "expires": str(int(time.time()) + max(ttl_seconds, 60)),
+        "format": image_format,
+        "make": car_model.make.name,
+        "model": car_model.name,
+        "width": width,
+    }
+    canonical = urlencode(sorted(params.items()), quote_via=quote)
+    params["sig"] = hmac.new(
+        api_secret.encode("utf-8"),
+        canonical.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+    return f"https://carimagesapi.com/image?{urlencode(params, quote_via=quote)}"
 
 
 class CarImagesApiClient:

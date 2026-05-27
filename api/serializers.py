@@ -27,6 +27,7 @@ from .models import (
     UserReport,
     UserCarModel,
 )
+from .car_catalog_sync import build_signed_model_image_url
 from .translation import (
     localize_part_request_status_label,
     resolve_requested_translation_language,
@@ -170,6 +171,7 @@ class CarModelSerializer(serializers.ModelSerializer):
     make_id = serializers.IntegerField(source="make.id", read_only=True)
     make_name = serializers.CharField(source="make.name", read_only=True)
     display_name = serializers.SerializerMethodField()
+    image_url = serializers.SerializerMethodField()
 
     class Meta:
         model = CarModel
@@ -186,6 +188,9 @@ class CarModelSerializer(serializers.ModelSerializer):
 
     def get_display_name(self, obj):
         return f"{obj.make.name} {obj.name}"
+
+    def get_image_url(self, obj):
+        return build_signed_model_image_url(obj)
 
 
 class CarMakeSerializer(serializers.ModelSerializer):
