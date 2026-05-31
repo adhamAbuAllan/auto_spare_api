@@ -1,0 +1,27 @@
+name: Keep Render Awake
+
+on:
+  schedule:
+    - cron: "*/14 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  KEEP_ALIVE_URL: ${{ vars.RENDER_KEEP_ALIVE_URL || 'https://auto-spare-api.onrender.com/api/health/' }}
+
+jobs:
+  ping:
+    name: Ping Render health endpoint
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Request health endpoint
+        run: |
+          curl --fail --silent --show-error --location \
+            --max-time 30 \
+            --retry 2 \
+            --retry-delay 10 \
+            "$KEEP_ALIVE_URL"

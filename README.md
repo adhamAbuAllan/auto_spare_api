@@ -161,6 +161,24 @@ The container startup will:
 
 The web service uses the health endpoint at `/api/health/`, and the websocket/chat runtime uses Redis when `CHANNEL_LAYER_BACKEND=redis`.
 
+## Render Keep-Alive
+
+The repo includes a GitHub Actions workflow that pings the Render health endpoint
+every 14 minutes:
+
+```text
+.github/workflows/keep-render-awake.yml
+```
+
+By default it requests:
+
+```text
+https://auto-spare-api.onrender.com/api/health/
+```
+
+To use a different URL, set a GitHub repository variable named
+`RENDER_KEEP_ALIVE_URL`.
+
 ## Tests
 
 ```bash
