@@ -1,6 +1,8 @@
 import logging
 from datetime import datetime
 from pathlib import Path
+from itertools import zip_longest
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery, Value
 from django.db.models.functions import Coalesce
@@ -119,6 +121,101 @@ def create_and_broadcast_system_chat_message(*, conversation_id, sender, text):
 @permission_classes([AllowAny])
 def health(request):
     return JsonResponse({"status": "ok"})
+
+
+def _version_parts(value):
+    normalized = str(value or "").strip()
+    if not normalized:
+        return []
+
+    parts = []
+    for raw_part in normalized.replace("+", ".").replace("-", ".").split("."):
+        try:
+            parts.append(int(raw_part))
+        except ValueError:
+            break
+    return parts
+
+
+def _is_newer_version(candidate, current):
+    candidate_parts = _version_parts(candidate)
+    current_parts = _version_parts(current)
+    if not candidate_parts or not current_parts:
+        return False
+
+    for candidate_part, current_part in zip_longest(candidate_parts, current_parts, fillvalue=0):
+        if candidate_part > current_part:
+            return True
+        if candidate_part < current_part:
+            return False
+    return False
+
+
+def _is_newer_build(candidate, current):
+    if candidate is None:
+        return False
+    try:
+        current_build = int(str(current or "").strip())
+    except ValueError:
+        return False
+    return candidate > current_build
+
+
+def _platform_update_settings(platform):
+    normalized_platform = str(platform or "").strip().lower()
+    if normalized_platform == "ios":
+        return {
+            "latest_version": settings.APP_UPDATE_LATEST_IOS_VERSION,
+            "latest_build_number": settings.APP_UPDATE_LATEST_IOS_BUILD,
+            "minimum_supported_version": settings.APP_UPDATE_MIN_IOS_VERSION,
+            "minimum_supported_build_number": settings.APP_UPDATE_MIN_IOS_BUILD,
+            "store_url": settings.APP_UPDATE_IOS_STORE_URL,
+        }
+
+    return {
+        "latest_version": settings.APP_UPDATE_LATEST_ANDROID_VERSION,
+        "latest_build_number": settings.APP_UPDATE_LATEST_ANDROID_BUILD,
+        "minimum_supported_version": settings.APP_UPDATE_MIN_ANDROID_VERSION,
+        "minimum_supported_build_number": settings.APP_UPDATE_MIN_ANDROID_BUILD,
+        "store_url": settings.APP_UPDATE_ANDROID_STORE_URL,
+    }
+
+
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def app_update(request):
+    platform = request.query_params.get("platform", "android")
+    current_version = request.query_params.get("version", "")
+    current_build = request.query_params.get("build", "")
+    update_settings = _platform_update_settings(platform)
+
+    update_available = (
+        _is_newer_version(update_settings["latest_version"], current_version)
+        or _is_newer_build(update_settings["latest_build_number"], current_build)
+    )
+    update_required = (
+        _is_newer_version(update_settings["minimum_supported_version"], current_version)
+        or _is_newer_build(update_settings["minimum_supported_build_number"], current_build)
+    )
+
+    payload = {
+        "update_available": update_available or update_required,
+        "update_required": update_required,
+        "latest_version": update_settings["latest_version"] or None,
+        "latest_build_number": update_settings["latest_build_number"],
+        "minimum_supported_version": update_settings["minimum_supported_version"] or None,
+        "minimum_supported_build_number": update_settings["minimum_supported_build_number"],
+        "title": settings.APP_UPDATE_TITLE or None,
+        "message": settings.APP_UPDATE_MESSAGE or None,
+        "release_notes": settings.APP_UPDATE_RELEASE_NOTES or None,
+        "store_url": update_settings["store_url"] or None,
+    }
+    if str(platform or "").strip().lower() == "ios":
+        payload["ios_store_url"] = update_settings["store_url"] or None
+    else:
+        payload["android_store_url"] = update_settings["store_url"] or None
+
+    return JsonResponse(payload)
 
 
 @api_view(["GET"])

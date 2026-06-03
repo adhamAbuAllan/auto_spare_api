@@ -19,6 +19,7 @@ from .views import (
     PartRequestViewSet,
     SparePartViewSet,
     UserReportViewSet,
+    app_update,
     health,
 )
 from .car_images_proxy import car_images_api_proxy
@@ -47,6 +48,7 @@ urlpatterns = [
     re_path(r"^v1/(?P<path>.*)$", car_images_api_proxy, name="car_images_api_proxy"),
     path("chat-tester/", chat_tester, name="chat_tester"),
     path("health/", health, name="health"),
+    path("app-update/", app_update, name="app_update"),
     path("me/", MeView.as_view(), name="me"),
     path("token/", ClearTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),
