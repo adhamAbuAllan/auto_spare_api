@@ -98,6 +98,93 @@ class ApiTestCase(APITestCase):
         return car_model
 
 
+class AppUpdateApiTests(ApiTestCase):
+    @override_settings(
+        APP_UPDATE_LATEST_ANDROID_VERSION="3.1.0",
+        APP_UPDATE_LATEST_ANDROID_BUILD=3,
+        APP_UPDATE_MIN_ANDROID_VERSION="",
+        APP_UPDATE_MIN_ANDROID_BUILD=None,
+        APP_UPDATE_ANDROID_STORE_URL="https://play.google.com/store/apps/details?id=com.mta_spare_auto",
+        APP_UPDATE_TITLE="New update available",
+        APP_UPDATE_MESSAGE="Update MTA to get the latest features.",
+        APP_UPDATE_RELEASE_NOTES="Better notifications.",
+    )
+    def test_app_update_returns_available_android_update(self):
+        response = self.client.get(
+            "/api/app-update/",
+            {
+                "platform": "android",
+                "version": "3.0.0",
+                "build": "2",
+                "package": "com.mta_spare_auto",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["update_available"])
+        self.assertFalse(payload["update_required"])
+        self.assertEqual(payload["latest_version"], "3.1.0")
+        self.assertEqual(payload["latest_build_number"], 3)
+        self.assertEqual(
+            payload["android_store_url"],
+            "https://play.google.com/store/apps/details?id=com.mta_spare_auto",
+        )
+        self.assertEqual(payload["message"], "Update MTA to get the latest features.")
+
+    @override_settings(
+        APP_UPDATE_LATEST_ANDROID_VERSION="3.1.0",
+        APP_UPDATE_LATEST_ANDROID_BUILD=3,
+        APP_UPDATE_MIN_ANDROID_VERSION="3.0.0",
+        APP_UPDATE_MIN_ANDROID_BUILD=2,
+        APP_UPDATE_ANDROID_STORE_URL="https://play.google.com/store/apps/details?id=com.mta_spare_auto",
+        APP_UPDATE_TITLE="",
+        APP_UPDATE_MESSAGE="",
+        APP_UPDATE_RELEASE_NOTES="",
+    )
+    def test_app_update_returns_required_when_below_minimum_build(self):
+        response = self.client.get(
+            "/api/app-update/",
+            {
+                "platform": "android",
+                "version": "3.0.0",
+                "build": "1",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["update_available"])
+        self.assertTrue(payload["update_required"])
+        self.assertEqual(payload["minimum_supported_version"], "3.0.0")
+        self.assertEqual(payload["minimum_supported_build_number"], 2)
+
+    @override_settings(
+        APP_UPDATE_LATEST_ANDROID_VERSION="3.0.0",
+        APP_UPDATE_LATEST_ANDROID_BUILD=2,
+        APP_UPDATE_MIN_ANDROID_VERSION="",
+        APP_UPDATE_MIN_ANDROID_BUILD=None,
+        APP_UPDATE_ANDROID_STORE_URL="",
+        APP_UPDATE_TITLE="",
+        APP_UPDATE_MESSAGE="",
+        APP_UPDATE_RELEASE_NOTES="",
+    )
+    def test_app_update_returns_no_update_when_current_version_matches(self):
+        response = self.client.get(
+            "/api/app-update/",
+            {
+                "platform": "android",
+                "version": "3.0.0",
+                "build": "2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertFalse(payload["update_available"])
+        self.assertFalse(payload["update_required"])
+
+
 class UsersApiTests(ApiTestCase):
     def test_create_user(self):
         response = self.client.post(
