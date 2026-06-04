@@ -7,6 +7,7 @@ from .auth import ClearTokenObtainPairView
 from .views import (
     ApiUserViewSet,
     CarMakeViewSet,
+    CarModelViewSet,
     ConversationParticipantViewSet,
     ConversationViewSet,
     MeView,
@@ -27,6 +28,7 @@ router = DefaultRouter()
 router.register("users", ApiUserViewSet, basename="users")
 router.register("spare-parts", SparePartViewSet, basename="spare-parts")
 router.register("car-makes", CarMakeViewSet, basename="car-makes")
+router.register("car-models", CarModelViewSet, basename="car-models")
 router.register("part-request-statuses", PartRequestStatusViewSet, basename="part-request-statuses")
 router.register("part-requests", PartRequestViewSet, basename="part-requests")
 router.register("part-request-accesses", PartRequestAccessViewSet, basename="part-request-accesses")

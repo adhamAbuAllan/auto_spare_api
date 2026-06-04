@@ -2,7 +2,18 @@ import logging
 from datetime import datetime
 from pathlib import Path
 from django.db import transaction
-from django.db.models import Count, F, OuterRef, Prefetch, Q, Subquery, Value
+from django.db.models import (
+    Case,
+    Count,
+    F,
+    IntegerField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Value,
+    When,
+)
 from django.db.models.functions import Coalesce
 from django.http import Http404, HttpResponse, JsonResponse
 from django.utils import timezone
@@ -35,6 +46,7 @@ from .pagination import MessageCursorPagination
 from .serializers import (
     ApiUserSerializer,
     CarMakeSerializer,
+    CarModelSerializer,
     ConversationListSerializer,
     ConversationParticipantSerializer,
     ConversationSerializer,
@@ -211,6 +223,54 @@ class CarMakeViewSet(
 
     def get_queryset(self):
         return CarMake.objects.prefetch_related("models").order_by("name")
+
+
+class CarModelViewSet(
+    mixins.ListModelMixin,
+    viewsets.GenericViewSet,
+):
+    permission_classes = [AllowAny]
+    serializer_class = CarModelSerializer
+
+    def get_queryset(self):
+        queryset = CarModel.objects.select_related("make").filter(is_active=True)
+        make_id = str(self.request.query_params.get("make_id") or "").strip()
+        make_slug = str(self.request.query_params.get("make") or "").strip().lower()
+        search = str(
+            self.request.query_params.get("search")
+            or self.request.query_params.get("q")
+            or ""
+        ).strip()
+
+        if make_id.isdigit():
+            queryset = queryset.filter(make_id=int(make_id))
+        elif make_slug:
+            queryset = queryset.filter(make__slug=make_slug)
+
+        if search:
+            terms = [term for term in search.split() if term]
+            for term in terms:
+                queryset = queryset.filter(
+                    Q(name__icontains=term)
+                    | Q(make__name__icontains=term)
+                    | Q(slug__icontains=term)
+                )
+
+            starts_with_rank = (
+                Q(name__istartswith=search)
+                | Q(make__name__istartswith=search)
+                | Q(slug__istartswith=search)
+            )
+            queryset = queryset.annotate(
+                match_rank=Case(
+                    When(starts_with_rank, then=Value(0)),
+                    default=Value(1),
+                    output_field=IntegerField(),
+                )
+            ).order_by("match_rank", "make__name", "name")
+            return queryset
+
+        return queryset.order_by("make__name", "name")
 
 
 class PartRequestStatusViewSet(

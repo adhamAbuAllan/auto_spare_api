@@ -56,6 +56,7 @@ CHAT_HEARTBEAT_INTERVAL_SECONDS=20
 ALLOWED_HOSTS=127.0.0.1,localhost
 CSRF_TRUSTED_ORIGINS=
 CAR_IMAGES_API_BASE_URL=https://carimagesapi.com/api/v1
+CAR_IMAGES_API_FALLBACK_BASE_URLS=
 CAR_IMAGES_API_PROXY_ENABLED=False
 CAR_IMAGES_API_PROXY_TARGET_BASE_URL=https://carimagesapi.com/api/v1
 CAR_IMAGES_API_PROXY_TOKEN=
@@ -132,6 +133,15 @@ CAR_IMAGES_API_PROXY_TOKEN=choose-a-long-random-token
 
 With that setup, Render serves the project as usual, but `CarImagesApiClient` fetches
 `/makes` and `/makes/<make>/models` through your ngrok tunnel.
+
+If you want Render to try the real API first and only use the tunnel when the direct
+request is blocked, keep `CAR_IMAGES_API_BASE_URL=https://carimagesapi.com/api/v1`
+and set:
+
+```bash
+CAR_IMAGES_API_FALLBACK_BASE_URLS=https://your-ngrok-domain.ngrok-free.app/api/v1
+CAR_IMAGES_API_PROXY_TOKEN=choose-a-long-random-token
+```
 
 ## Docker Stack
 

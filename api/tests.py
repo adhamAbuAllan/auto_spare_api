@@ -352,6 +352,20 @@ class CarCatalogApiTests(ApiTestCase):
             "Brand Beta Model Two",
         )
 
+    def test_search_car_models_filters_by_query_and_make(self):
+        alpha_make = CarMake.objects.get(name="Brand Alpha")
+        self.create_car_model(make_name="Brand Alpha", model_name="RS Seven")
+        self.create_car_model(make_name="Brand Beta", model_name="RS Eight")
+
+        response = self.client.get(
+            f"/api/car-models/?search=rs&make_id={alpha_make.id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(payload["count"], 1)
+        self.assertEqual(payload["results"][0]["display_name"], "Brand Alpha RS Seven")
+
 
 class PartRequestApiTests(ApiTestCase):
     def setUp(self):

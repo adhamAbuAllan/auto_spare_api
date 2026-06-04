@@ -347,6 +347,10 @@ CAR_IMAGES_API_BASE_URL = os.getenv(
     "CAR_IMAGES_API_BASE_URL",
     "https://carimagesapi.com/api/v1",
 ).strip().rstrip("/")
+CAR_IMAGES_API_FALLBACK_BASE_URLS = tuple(
+    item.rstrip("/")
+    for item in _env_list("CAR_IMAGES_API_FALLBACK_BASE_URLS")
+)
 CAR_IMAGES_API_PROXY_ENABLED = _env_bool(
     os.getenv("CAR_IMAGES_API_PROXY_ENABLED"),
     default=False,

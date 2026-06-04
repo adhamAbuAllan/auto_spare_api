@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -17,6 +17,7 @@ from django.db import transaction
 from .models import CarMake, CarModel
 
 logger = logging.getLogger(__name__)
+DEFAULT_CAR_IMAGES_API_BASE_URL = "https://carimagesapi.com/api/v1"
 
 _CACHE_LOCK = threading.RLock()
 _MEMORY_CACHE: dict[str, Any] = {
@@ -28,6 +29,34 @@ _MEMORY_CACHE: dict[str, Any] = {
 
 class CarImagesApiError(RuntimeError):
     """Raised when the external car catalog API cannot be used safely."""
+
+
+def _clean_base_url(value: Any) -> str:
+    return str(value or "").strip().rstrip("/")
+
+
+def _as_base_url_list(value: Any) -> list[str]:
+    if isinstance(value, str):
+        candidates = value.split(",")
+    else:
+        candidates = value or []
+    urls = []
+    for item in candidates:
+        url = _clean_base_url(item)
+        if url:
+            urls.append(url)
+    return urls
+
+
+def _unique_base_urls(values: list[str]) -> list[str]:
+    urls = []
+    seen = set()
+    for value in values:
+        url = _clean_base_url(value)
+        if url and url not in seen:
+            urls.append(url)
+            seen.add(url)
+    return urls
 
 
 def _normalize_name(value: Any) -> str:
@@ -149,13 +178,24 @@ def build_signed_model_image_url(car_model: CarModel) -> str:
 
 class CarImagesApiClient:
     def __init__(self) -> None:
-        self.base_url = str(
+        configured_base_url = _clean_base_url(
             getattr(
                 settings,
                 "CAR_IMAGES_API_BASE_URL",
-                "https://carimagesapi.com/api/v1",
+                DEFAULT_CAR_IMAGES_API_BASE_URL,
             )
-        ).rstrip("/")
+        )
+        configured_fallback_urls = _as_base_url_list(
+            getattr(settings, "CAR_IMAGES_API_FALLBACK_BASE_URLS", ())
+        )
+        self.base_urls = _unique_base_urls(
+            [
+                configured_base_url,
+                *configured_fallback_urls,
+                DEFAULT_CAR_IMAGES_API_BASE_URL,
+            ]
+        )
+        self.base_url = self.base_urls[0]
         self.timeout_seconds = int(
             getattr(settings, "CAR_IMAGES_API_TIMEOUT_SECONDS", 20)
         )
@@ -164,13 +204,32 @@ class CarImagesApiClient:
         )
 
     def _request_json(self, path: str) -> dict[str, Any]:
-        url = f"{self.base_url}{path}"
+        errors = []
+        for index, base_url in enumerate(self.base_urls):
+            url = f"{base_url}{path}"
+            try:
+                return self._request_json_from_url(url, base_url)
+            except CarImagesApiError as exc:
+                errors.append(str(exc))
+                if index < len(self.base_urls) - 1:
+                    logger.warning(
+                        "Car images API request failed through %s; trying fallback: %s",
+                        base_url,
+                        exc,
+                    )
+
+        raise CarImagesApiError(
+            "Car images API request failed for all configured base URLs. "
+            + " | ".join(errors)
+        )
+
+    def _request_json_from_url(self, url: str, base_url: str) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
             "User-Agent": "auto-spare-api/1.0",
         }
         proxy_token = str(getattr(settings, "CAR_IMAGES_API_PROXY_TOKEN", "")).strip()
-        if proxy_token:
+        if proxy_token and self._should_send_proxy_token(base_url):
             headers["X-Car-Images-Proxy-Token"] = proxy_token
 
         request = Request(
@@ -183,7 +242,7 @@ class CarImagesApiClient:
         except HTTPError as exc:
             error_body = ""
             try:
-                error_body = exc.read().decode("utf-8", errors="replace")
+                error_body = exc.read().decode("utf-8", errors="replace")[:500]
             except Exception:
                 pass
             raise CarImagesApiError(
@@ -206,6 +265,13 @@ class CarImagesApiClient:
                 f"Car images API returned an unexpected payload for {url}."
             )
         return data
+
+    def _should_send_proxy_token(self, base_url: str) -> bool:
+        base_hostname = (urlparse(base_url).hostname or "").lower()
+        upstream_hostname = (
+            urlparse(DEFAULT_CAR_IMAGES_API_BASE_URL).hostname or ""
+        ).lower()
+        return base_hostname != upstream_hostname
 
     def list_makes(self) -> list[dict[str, Any]]:
         cached = _cache_get("makes", None, self.cache_ttl_seconds)

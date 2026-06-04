@@ -21,7 +21,9 @@ services:
       - key: TRUST_PROXY_HEADERS
         value: "true"
       - key: CAR_IMAGES_API_BASE_URL
-        value: https://polishedly-bouncy-jerry.ngrok-free.dev/api/v1
+        value: https://carimagesapi.com/api/v1
+      - key: CAR_IMAGES_API_FALLBACK_BASE_URLS
+        sync: false
       - key: CAR_IMAGES_API_PROXY_TOKEN
         sync: false
       - key: CAR_IMAGES_API_KEY
