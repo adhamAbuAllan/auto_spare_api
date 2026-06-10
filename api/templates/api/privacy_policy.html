@@ -1,0 +1,790 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>MTA Auto Spare Privacy Policy</title>
+    <meta
+      name="description"
+      content="Privacy Policy for the MTA Auto Spare mobile application in English, Arabic, and Hebrew."
+    />
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4efe7;
+        --surface: rgba(255, 255, 255, 0.82);
+        --text: #1f2f38;
+        --muted: #5e6d73;
+        --line: rgba(17, 100, 102, 0.16);
+        --brand: #116466;
+        --brand-deep: #0c4a63;
+        --shadow: 0 20px 60px rgba(12, 37, 51, 0.12);
+        --radius-xl: 28px;
+        --radius-lg: 22px;
+        --content-width: 1080px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(17, 100, 102, 0.18), transparent 28%),
+          radial-gradient(circle at top right, rgba(214, 140, 69, 0.16), transparent 24%),
+          linear-gradient(180deg, #f7f2ea 0%, var(--bg) 100%);
+        color: var(--text);
+        font-family: "Trebuchet MS", Tahoma, "Segoe UI", sans-serif;
+        line-height: 1.7;
+      }
+
+      body[data-lang="ar"],
+      body[data-lang="he"] {
+        font-family: Tahoma, "Segoe UI", sans-serif;
+      }
+
+      .page-shell {
+        width: min(calc(100% - 32px), var(--content-width));
+        margin: 0 auto;
+        padding: 28px 0 44px;
+      }
+
+      .hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: var(--radius-xl);
+        padding: 28px;
+        background: linear-gradient(135deg, rgba(12, 74, 99, 0.96), rgba(17, 100, 102, 0.92));
+        color: #fff;
+        box-shadow: var(--shadow);
+      }
+
+      .hero::after {
+        content: "";
+        position: absolute;
+        inset: auto -80px -100px auto;
+        width: 280px;
+        height: 280px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.09);
+      }
+
+      .hero-top {
+        display: flex;
+        gap: 16px;
+        justify-content: space-between;
+        align-items: flex-start;
+        position: relative;
+        z-index: 1;
+      }
+
+      .brand-lockup {
+        max-width: 720px;
+      }
+
+      .brand-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.14);
+        font-size: 0.92rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+
+      .brand-title {
+        margin: 16px 0 10px;
+        font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        font-size: clamp(2rem, 4vw, 3.4rem);
+        line-height: 1.08;
+      }
+
+      .brand-lead {
+        margin: 0;
+        max-width: 70ch;
+        color: rgba(255, 255, 255, 0.9);
+        font-size: 1.05rem;
+      }
+
+      .hero-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin-top: 24px;
+      }
+
+      .meta-chip {
+        padding: 10px 14px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.14);
+        color: rgba(255, 255, 255, 0.96);
+        font-size: 0.95rem;
+      }
+
+      .lang-panel {
+        min-width: 220px;
+        padding: 16px;
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.12);
+      }
+
+      .lang-label {
+        margin: 0 0 10px;
+        color: rgba(255, 255, 255, 0.84);
+        font-size: 0.92rem;
+      }
+
+      .lang-options {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .lang-button {
+        border: 1px solid rgba(255, 255, 255, 0.26);
+        background: transparent;
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 999px;
+        cursor: pointer;
+        font: inherit;
+      }
+
+      .lang-button.is-active {
+        background: #fff;
+        color: var(--brand-deep);
+        border-color: #fff;
+        font-weight: 700;
+      }
+
+      .content-grid {
+        display: grid;
+        gap: 22px;
+        grid-template-columns: minmax(0, 300px) minmax(0, 1fr);
+        margin-top: 22px;
+      }
+
+      .toc-card,
+      .content-card,
+      .footer-card {
+        background: var(--surface);
+        border: 1px solid var(--line);
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow);
+      }
+
+      .toc-card {
+        align-self: start;
+        position: sticky;
+        top: 18px;
+        padding: 22px;
+      }
+
+      .toc-title {
+        margin: 0 0 14px;
+        font-size: 1.05rem;
+      }
+
+      .toc-list {
+        list-style: none;
+        margin: 0;
+        padding: 0;
+        display: grid;
+        gap: 10px;
+      }
+
+      .toc-link {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 14px;
+        text-decoration: none;
+        color: var(--text);
+        background: rgba(255, 255, 255, 0.66);
+        border: 1px solid rgba(17, 100, 102, 0.08);
+      }
+
+      .content-card {
+        padding: 26px;
+      }
+
+      .section-card {
+        padding: 22px;
+        border-radius: var(--radius-lg);
+        background: rgba(255, 255, 255, 0.8);
+        border: 1px solid rgba(17, 100, 102, 0.1);
+      }
+
+      .section-card + .section-card {
+        margin-top: 18px;
+      }
+
+      .section-title {
+        margin: 0 0 10px;
+        font-family: "Palatino Linotype", "Book Antiqua", Georgia, serif;
+        font-size: 1.45rem;
+        line-height: 1.2;
+        color: var(--brand-deep);
+      }
+
+      .section-text {
+        margin: 0 0 12px;
+      }
+
+      .section-list {
+        margin: 0;
+        padding-inline-start: 22px;
+      }
+
+      .section-list li + li {
+        margin-top: 8px;
+      }
+
+      .footer-card {
+        margin-top: 22px;
+        padding: 20px 22px;
+      }
+
+      .footer-text {
+        margin: 0;
+        color: var(--muted);
+      }
+
+      @media (max-width: 900px) {
+        .hero-top,
+        .content-grid {
+          display: grid;
+          grid-template-columns: 1fr;
+        }
+
+        .lang-panel,
+        .toc-card {
+          min-width: 0;
+          position: static;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .page-shell {
+          width: min(calc(100% - 20px), var(--content-width));
+          padding-top: 16px;
+        }
+
+        .hero,
+        .content-card,
+        .toc-card,
+        .footer-card {
+          border-radius: 22px;
+        }
+
+        .hero,
+        .content-card {
+          padding: 20px;
+        }
+
+        .section-card {
+          padding: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body data-lang="en">
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-top">
+          <div class="brand-lockup">
+            <div class="brand-kicker" id="brand-kicker"></div>
+            <h1 class="brand-title" id="page-title"></h1>
+            <p class="brand-lead" id="page-lead"></p>
+            <div class="hero-meta">
+              <div class="meta-chip" id="effective-date"></div>
+              <div class="meta-chip" id="policy-scope"></div>
+            </div>
+          </div>
+          <aside class="lang-panel">
+            <p class="lang-label" id="language-label"></p>
+            <div class="lang-options">
+              <button class="lang-button" data-lang="en" type="button">English</button>
+              <button class="lang-button" data-lang="ar" type="button">العربية</button>
+              <button class="lang-button" data-lang="he" type="button">עברית</button>
+            </div>
+          </aside>
+        </div>
+      </header>
+
+      <main class="content-grid">
+        <aside class="toc-card">
+          <h2 class="toc-title" id="toc-title"></h2>
+          <nav aria-label="Privacy Policy sections">
+            <ul class="toc-list" id="toc-list"></ul>
+          </nav>
+        </aside>
+
+        <section class="content-card" id="sections-root"></section>
+      </main>
+
+      <footer class="footer-card">
+        <p class="footer-text" id="footer-text"></p>
+      </footer>
+    </div>
+
+    <script>
+      const content = {
+        en: {
+          dir: "ltr",
+          htmlLang: "en",
+          brandKicker: "MTA Auto Spare",
+          pageTitle: "Privacy Policy",
+          pageLead:
+            "This page explains how the MTA Auto Spare app collects, uses, stores, and shares information when people create accounts, publish spare-part requests, chat with suppliers, upload media, and receive notifications.",
+          languageLabel: "Choose language",
+          effectiveDate: "Effective date: May 5, 2026",
+          policyScope: "Applies to the current mobile app build",
+          tocTitle: "On this page",
+          footer:
+            "If app features or third-party services change, this policy should be updated and republished. This page describes the current project behavior and should be reviewed by the publisher before production release.",
+          sections: [
+            {
+              id: "info-we-collect",
+              title: "1. Information We Collect",
+              paragraphs: [
+                "Depending on how you use the app, we may collect information that you provide directly and information that is generated while the service is operating.",
+              ],
+              items: [
+                "Account and profile information such as your full name, email address, username, password, account role, phone number, city, profile photo, and supported car models.",
+                "Marketplace request information such as request title, description, city, price range, car model selection, and request images.",
+                "Communication data such as chat messages, attached images, voice messages, timestamps, read status, and related conversation activity.",
+                "Safety and moderation data such as user reports, report reasons, report details, and related review notes.",
+                "Device and technical data such as push notification token, device identifier, platform type, app session data, and notification preferences.",
+                "Local app storage data such as cached chat content and saved sign-in session details stored on the device through app storage.",
+              ],
+            },
+            {
+              id: "how-we-use-data",
+              title: "2. How We Use Information",
+              paragraphs: [
+                "We use collected information to operate the marketplace and communication features of the app.",
+              ],
+              items: [
+                "To create and manage user accounts and profiles.",
+                "To publish spare-part requests and match them to relevant suppliers.",
+                "To enable private chats, media sharing, voice messages, and request-related communication.",
+                "To send chat and marketplace notifications through Firebase Cloud Messaging.",
+                "To save user preferences such as language and notification behavior.",
+                "To detect abuse, review reports, secure the service, and maintain reliability.",
+              ],
+            },
+            {
+              id: "permissions",
+              title: "3. Device Permissions and Access",
+              paragraphs: [
+                "The app may request certain permissions only when the related feature is used.",
+              ],
+              items: [
+                "Photos and media access: used when you choose profile photos, attach request images, or send chat images.",
+                "Microphone access: used only when you record and send voice messages.",
+                "Notifications: used to deliver chat and marketplace activity alerts.",
+                "Internet access: required to sign in, load content, upload media, and communicate with the backend service.",
+              ],
+            },
+            {
+              id: "sharing",
+              title: "4. How Information May Be Shared",
+              paragraphs: [
+                "We do not describe this app as selling personal information. However, some information is shared as part of the marketplace and messaging experience.",
+              ],
+              items: [
+                "Profile information that you choose to provide may be shown to other users inside the app. Supplier contact details such as email and phone may be visible in supplier profiles when available.",
+                "Request information, related images, and request metadata may be visible to users who browse the marketplace or participate in related chats.",
+                "Push notification delivery relies on Firebase Cloud Messaging. External providers may process the technical data needed to deliver those notifications.",
+                "If you choose to open WhatsApp from the app, your communication with WhatsApp is handled under WhatsApp's own policies.",
+                "Information may also be disclosed when required by law, for fraud prevention, or to protect users and the service.",
+              ],
+            },
+            {
+              id: "retention-security",
+              title: "5. Storage, Security, and Retention",
+              paragraphs: [
+                "We aim to keep information only as long as needed for the app to function, support users, resolve disputes, and protect the service.",
+                "Some information is stored on the device, including sign-in session data and a limited cache of recent chat messages. Server-side data may include account details, requests, chats, reports, and registered mobile device records.",
+              ],
+              items: [
+                "Session tokens and some profile data are stored locally on the device to keep you signed in.",
+                "Recent chat content may be cached locally to improve loading and continuity.",
+                "Media files that you upload may be stored on backend systems used by the app.",
+                "Reasonable technical and administrative measures should be used by the publisher to protect stored information, but no online system can guarantee absolute security.",
+              ],
+            },
+            {
+              id: "your-choices",
+              title: "6. Your Choices and Account Deletion",
+              paragraphs: [
+                "You can update some profile information from within the app, including your name, phone number, city, supported car models, notification preferences, and profile photo.",
+                "The current app also includes an account deletion action. Based on the current project behavior, deleting the account is intended to remove the profile, request posts, chat history, and registered device records from active use, subject to any limited retention required for security, fraud prevention, or legal obligations.",
+              ],
+              items: [
+                "You may disable notifications through the app or your device settings.",
+                "You may choose not to upload photos, request images, or voice messages.",
+                "Depending on your region, you may also have rights to request access, correction, or deletion of personal information.",
+              ],
+            },
+            {
+              id: "children",
+              title: "7. Children's Privacy",
+              paragraphs: [
+                "This app is not intended for young children. The publisher should not knowingly collect personal information from children in violation of applicable law.",
+              ],
+            },
+            {
+              id: "changes-contact",
+              title: "8. Changes and Contact",
+              paragraphs: [
+                "This policy may be updated when app features, data practices, or service providers change.",
+                "For privacy-related questions or requests, users should contact the app publisher through the contact details provided in the app listing or official support channel.",
+              ],
+            },
+          ],
+        },
+        ar: {
+          dir: "rtl",
+          htmlLang: "ar",
+          brandKicker: "MTA Auto Spare",
+          pageTitle: "سياسة الخصوصية",
+          pageLead:
+            "توضح هذه الصفحة كيف يجمع تطبيق MTA Auto Spare المعلومات ويستخدمها ويخزنها ويشاركها عند إنشاء الحسابات ونشر طلبات قطع الغيار والتواصل مع المورّدين ورفع الوسائط واستلام الإشعارات.",
+          languageLabel: "اختر اللغة",
+          effectiveDate: "تاريخ السريان: 5 مايو 2026",
+          policyScope: "تنطبق على الإصدار الحالي من تطبيق الهاتف",
+          tocTitle: "محتويات الصفحة",
+          footer:
+            "إذا تغيرت خصائص التطبيق أو الخدمات الخارجية المستخدمة فيه، فيجب تحديث هذه السياسة وإعادة نشرها. هذه الصفحة تصف سلوك المشروع الحالي وينبغي على ناشر التطبيق مراجعتها قبل الإطلاق الإنتاجي.",
+          sections: [
+            {
+              id: "info-we-collect",
+              title: "1. المعلومات التي نجمعها",
+              paragraphs: [
+                "بحسب طريقة استخدامك للتطبيق، قد نجمع معلومات تقدمها أنت مباشرة ومعلومات يتم إنشاؤها أثناء تشغيل الخدمة.",
+              ],
+              items: [
+                "معلومات الحساب والملف الشخصي مثل الاسم الكامل والبريد الإلكتروني واسم المستخدم وكلمة المرور ودور الحساب ورقم الهاتف والمدينة وصورة الملف الشخصي وطرازات السيارات المدعومة.",
+                "معلومات طلبات السوق مثل عنوان الطلب والوصف والمدينة ونطاق السعر واختيار طراز السيارة وصور الطلب.",
+                "بيانات التواصل مثل رسائل الدردشة والصور المرفقة والرسائل الصوتية والطوابع الزمنية وحالة القراءة والنشاط المرتبط بالمحادثة.",
+                "بيانات الأمان والإشراف مثل بلاغات المستخدمين وسبب البلاغ وتفاصيله وملاحظات المراجعة المرتبطة به.",
+                "بيانات الجهاز والبيانات التقنية مثل رمز الإشعارات ومعرّف الجهاز ونوع المنصة وبيانات الجلسة وتفضيلات الإشعارات.",
+                "بيانات التخزين المحلي داخل التطبيق مثل ذاكرة التخزين المؤقت للمحادثات وبيانات تسجيل الدخول المحفوظة على الجهاز.",
+              ],
+            },
+            {
+              id: "how-we-use-data",
+              title: "2. كيف نستخدم المعلومات",
+              paragraphs: [
+                "نستخدم المعلومات المجمعة لتشغيل خصائص السوق والتواصل داخل التطبيق.",
+              ],
+              items: [
+                "لإنشاء الحسابات والملفات الشخصية وإدارتها.",
+                "لنشر طلبات قطع الغيار وربطها بالمورّدين المناسبين.",
+                "لتمكين المحادثات الخاصة ومشاركة الوسائط والرسائل الصوتية والتواصل المرتبط بالطلبات.",
+                "لإرسال إشعارات الدردشة ونشاط السوق عبر Firebase Cloud Messaging.",
+                "لحفظ تفضيلات المستخدم مثل اللغة وطريقة الإشعارات.",
+                "لاكتشاف إساءة الاستخدام ومراجعة البلاغات وحماية الخدمة والحفاظ على استقرارها.",
+              ],
+            },
+            {
+              id: "permissions",
+              title: "3. أذونات الجهاز والوصول",
+              paragraphs: [
+                "قد يطلب التطبيق بعض الأذونات فقط عند استخدام الميزة المرتبطة بها.",
+              ],
+              items: [
+                "الوصول إلى الصور والوسائط: عند اختيار صورة الملف الشخصي أو إرفاق صور الطلب أو إرسال صور داخل الدردشة.",
+                "الوصول إلى الميكروفون: عند تسجيل الرسائل الصوتية وإرسالها فقط.",
+                "الإشعارات: لإرسال تنبيهات الدردشة ونشاط السوق.",
+                "الوصول إلى الإنترنت: مطلوب لتسجيل الدخول وتحميل المحتوى ورفع الوسائط والتواصل مع خادم الخدمة.",
+              ],
+            },
+            {
+              id: "sharing",
+              title: "4. كيف يمكن مشاركة المعلومات",
+              paragraphs: [
+                "لا نصف هذا التطبيق بأنه يبيع المعلومات الشخصية. لكن بعض المعلومات تتم مشاركتها بحكم طبيعة السوق والمراسلة داخل التطبيق.",
+              ],
+              items: [
+                "قد تظهر معلومات الملف الشخصي التي تختار تقديمها لمستخدمين آخرين داخل التطبيق. وقد تظهر بيانات التواصل الخاصة بالمورّد مثل البريد الإلكتروني ورقم الهاتف في ملفه الشخصي عند توفرها.",
+                "قد تكون معلومات الطلب والصور المرتبطة به وبياناته الوصفية مرئية للمستخدمين الذين يتصفحون السوق أو يشاركون في المحادثات المرتبطة به.",
+                "يعتمد إرسال الإشعارات الفورية على Firebase Cloud Messaging، وقد تعالج الجهات الخارجية البيانات التقنية اللازمة لتوصيل تلك الإشعارات.",
+                "إذا اخترت فتح واتساب من داخل التطبيق، فسيتم التعامل مع هذا التواصل وفق سياسات واتساب الخاصة به.",
+                "قد يتم الإفصاح عن المعلومات أيضًا إذا كان ذلك مطلوبًا قانونيًا أو لمنع الاحتيال أو لحماية المستخدمين والخدمة.",
+              ],
+            },
+            {
+              id: "retention-security",
+              title: "5. التخزين والأمان والاحتفاظ بالبيانات",
+              paragraphs: [
+                "نسعى للاحتفاظ بالمعلومات فقط للمدة اللازمة لتشغيل التطبيق ودعم المستخدمين وحل النزاعات وحماية الخدمة.",
+                "يتم تخزين بعض المعلومات على الجهاز، بما في ذلك بيانات الجلسة وذاكرة مؤقتة محدودة لآخر الرسائل. وقد تشمل البيانات المخزنة على الخادم تفاصيل الحساب والطلبات والمحادثات والبلاغات وسجلات الأجهزة المسجلة.",
+              ],
+              items: [
+                "يتم حفظ رموز الجلسة وبعض بيانات الملف الشخصي محليًا على الجهاز للإبقاء على تسجيل الدخول.",
+                "قد يتم تخزين آخر رسائل المحادثة مؤقتًا محليًا لتحسين سرعة التحميل واستمرارية الاستخدام.",
+                "قد يتم حفظ ملفات الوسائط التي ترفعها على أنظمة الخلفية المستخدمة بواسطة التطبيق.",
+                "ينبغي أن يستخدم ناشر التطبيق وسائل تقنية وإدارية معقولة لحماية المعلومات المخزنة، ولكن لا يمكن لأي نظام عبر الإنترنت أن يضمن الأمان المطلق.",
+              ],
+            },
+            {
+              id: "your-choices",
+              title: "6. خياراتك وحذف الحساب",
+              paragraphs: [
+                "يمكنك تعديل بعض بيانات ملفك الشخصي من داخل التطبيق، بما في ذلك الاسم ورقم الهاتف والمدينة وطرازات السيارات المدعومة وتفضيلات الإشعارات وصورة الملف الشخصي.",
+                "يتضمن التطبيق الحالي أيضًا إجراءً لحذف الحساب. واستنادًا إلى سلوك المشروع الحالي، يُقصد من حذف الحساب إزالة الملف الشخصي وطلبات المستخدم وسجل المحادثات وسجلات الأجهزة المسجلة من الاستخدام النشط، مع جواز الاحتفاظ المحدود بما يلزم لأسباب أمنية أو لمنع الاحتيال أو للالتزامات القانونية.",
+              ],
+              items: [
+                "يمكنك تعطيل الإشعارات من داخل التطبيق أو من إعدادات جهازك.",
+                "يمكنك اختيار عدم رفع صور أو صور طلبات أو رسائل صوتية.",
+                "بحسب منطقتك، قد تكون لك أيضًا حقوق لطلب الوصول إلى بياناتك الشخصية أو تصحيحها أو حذفها.",
+              ],
+            },
+            {
+              id: "children",
+              title: "7. خصوصية الأطفال",
+              paragraphs: [
+                "هذا التطبيق غير مخصص للأطفال الصغار. ولا ينبغي لناشر التطبيق جمع معلومات شخصية من الأطفال عن علم بما يخالف القوانين المعمول بها.",
+              ],
+            },
+            {
+              id: "changes-contact",
+              title: "8. التحديثات ووسائل التواصل",
+              paragraphs: [
+                "قد يتم تحديث هذه السياسة عند تغير خصائص التطبيق أو ممارسات البيانات أو مزودي الخدمات الخارجيين.",
+                "للاستفسارات أو الطلبات المتعلقة بالخصوصية، ينبغي للمستخدم التواصل مع ناشر التطبيق عبر بيانات التواصل الموجودة في صفحة التطبيق أو قناة الدعم الرسمية.",
+              ],
+            },
+          ],
+        },
+        he: {
+          dir: "rtl",
+          htmlLang: "he",
+          brandKicker: "MTA Auto Spare",
+          pageTitle: "מדיניות פרטיות",
+          pageLead:
+            "דף זה מסביר כיצד אפליקציית MTA Auto Spare אוספת, משתמשת, שומרת ומשתפת מידע כאשר משתמשים יוצרים חשבונות, מפרסמים בקשות לחלקי חילוף, משוחחים עם ספקים, מעלים מדיה ומקבלים התראות.",
+          languageLabel: "בחר שפה",
+          effectiveDate: "תאריך תחילה: 5 במאי 2026",
+          policyScope: "חל על הגרסה הנוכחית של אפליקציית המובייל",
+          tocTitle: "תוכן העניינים",
+          footer:
+            "אם תכונות האפליקציה או השירותים החיצוניים שבהם היא משתמשת ישתנו, יש לעדכן ולפרסם מחדש מדיניות זו. דף זה מתאר את התנהגות הפרויקט הנוכחי ועל מפרסם האפליקציה לבדוק אותו לפני פרסום רשמי.",
+          sections: [
+            {
+              id: "info-we-collect",
+              title: "1. איזה מידע אנו אוספים",
+              paragraphs: [
+                "בהתאם לאופן השימוש שלך באפליקציה, אנו עשויים לאסוף מידע שאתה מוסר ישירות ומידע שנוצר בזמן הפעלת השירות.",
+              ],
+              items: [
+                "פרטי חשבון ופרופיל כגון שם מלא, כתובת דוא\"ל, שם משתמש, סיסמה, סוג החשבון, מספר טלפון, עיר, תמונת פרופיל ודגמי רכב נתמכים.",
+                "פרטי בקשות בשוק כגון כותרת הבקשה, תיאור, עיר, טווח מחירים, בחירת דגם רכב ותמונות הבקשה.",
+                "נתוני תקשורת כגון הודעות צ'אט, תמונות מצורפות, הודעות קוליות, חותמות זמן, סטטוס קריאה ופעילות הקשורה לשיחה.",
+                "נתוני בטיחות ופיקוח כגון דיווחי משתמשים, סיבות לדיווח, פרטי הדיווח והערות סקירה רלוונטיות.",
+                "נתוני מכשיר וטכנולוגיה כגון אסימון התראות, מזהה מכשיר, סוג פלטפורמה, נתוני סשן והעדפות התראות.",
+                "נתוני אחסון מקומי באפליקציה כגון מטמון שיחות ופרטי התחברות הנשמרים במכשיר.",
+              ],
+            },
+            {
+              id: "how-we-use-data",
+              title: "2. כיצד אנו משתמשים במידע",
+              paragraphs: [
+                "אנו משתמשים במידע שנאסף כדי להפעיל את תכונות השוק והתקשורת של האפליקציה.",
+              ],
+              items: [
+                "ליצירה ולניהול של חשבונות ופרופילים.",
+                "לפרסום בקשות לחלקי חילוף ולהתאמתן לספקים רלוונטיים.",
+                "לאפשר צ'אטים פרטיים, שיתוף מדיה, הודעות קוליות ותקשורת הקשורה לבקשות.",
+                "לשלוח התראות צ'אט ופעילות שוק דרך Firebase Cloud Messaging.",
+                "לשמור העדפות משתמש כמו שפה והתנהגות התראות.",
+                "לזהות שימוש לרעה, לבדוק דיווחים, לאבטח את השירות ולשמור על יציבותו.",
+              ],
+            },
+            {
+              id: "permissions",
+              title: "3. הרשאות וגישה למכשיר",
+              paragraphs: [
+                "האפליקציה עשויה לבקש הרשאות מסוימות רק כאשר משתמשים בפיצ'ר הקשור אליהן.",
+              ],
+              items: [
+                "גישה לתמונות ומדיה: כאשר אתה בוחר תמונת פרופיל, מצרף תמונות לבקשה או שולח תמונות בצ'אט.",
+                "גישה למיקרופון: רק כאשר אתה מקליט ושולח הודעות קוליות.",
+                "התראות: כדי לשלוח התראות על צ'אט ועל פעילות בשוק.",
+                "גישה לאינטרנט: נדרשת להתחברות, טעינת תוכן, העלאת מדיה ותקשורת עם שרת השירות.",
+              ],
+            },
+            {
+              id: "sharing",
+              title: "4. כיצד המידע עשוי להיות משותף",
+              paragraphs: [
+                "איננו מתארים את האפליקציה כמוכרת מידע אישי. עם זאת, חלק מהמידע משותף כחלק טבעי מחוויית השוק וההודעות.",
+              ],
+              items: [
+                "פרטי פרופיל שאתה בוחר למסור עשויים להיות מוצגים למשתמשים אחרים בתוך האפליקציה. פרטי קשר של ספק כגון דוא\"ל וטלפון עשויים להיות גלויים בפרופיל הספק כאשר הם זמינים.",
+                "פרטי בקשה, תמונות קשורות ומטא-דאטה של הבקשה עשויים להיות גלויים למשתמשים הגולשים בשוק או משתתפים בצ'אטים הקשורים.",
+                "משלוח התראות דחיפה מתבסס על Firebase Cloud Messaging, וספקים חיצוניים עשויים לעבד את הנתונים הטכניים הנדרשים למשלוח ההתראות.",
+                "אם תבחר לפתוח את WhatsApp מתוך האפליקציה, התקשורת שלך שם תנוהל לפי המדיניות של WhatsApp.",
+                "מידע עשוי להיחשף גם כאשר החוק מחייב זאת, לצורך מניעת הונאה או להגנה על המשתמשים והשירות.",
+              ],
+            },
+            {
+              id: "retention-security",
+              title: "5. אחסון, אבטחה ושמירת נתונים",
+              paragraphs: [
+                "אנו שואפים לשמור מידע רק כל עוד הוא נדרש להפעלת האפליקציה, לתמיכה במשתמשים, לפתרון מחלוקות ולהגנה על השירות.",
+                "חלק מהמידע נשמר במכשיר, כולל נתוני סשן ומטמון מוגבל של הודעות אחרונות. מידע בצד השרת עשוי לכלול פרטי חשבון, בקשות, שיחות, דיווחים ורשומות של מכשירים רשומים.",
+              ],
+              items: [
+                "אסימוני סשן וחלק מפרטי הפרופיל נשמרים מקומית במכשיר כדי להשאיר אותך מחובר.",
+                "תוכן שיחה אחרון עשוי להישמר במטמון מקומי לשיפור מהירות הטעינה והמשכיות השימוש.",
+                "קובצי מדיה שאתה מעלה עשויים להישמר במערכות השרת של האפליקציה.",
+                "מפרסם האפליקציה צריך להשתמש באמצעים טכניים ומנהליים סבירים כדי להגן על המידע, אך שום מערכת מקוונת אינה יכולה להבטיח אבטחה מוחלטת.",
+              ],
+            },
+            {
+              id: "your-choices",
+              title: "6. הבחירות שלך ומחיקת חשבון",
+              paragraphs: [
+                "באפשרותך לעדכן חלק מפרטי הפרופיל שלך מתוך האפליקציה, כולל שם, מספר טלפון, עיר, דגמי רכב נתמכים, העדפות התראות ותמונת פרופיל.",
+                "בגרסה הנוכחית של האפליקציה קיימת גם אפשרות למחיקת חשבון. לפי התנהגות הפרויקט הנוכחית, מחיקת החשבון נועדה להסיר מהשימוש הפעיל את הפרופיל, הבקשות, היסטוריית הצ'אט ורשומות המכשירים, בכפוף לשמירה מוגבלת הנדרשת לאבטחה, למניעת הונאה או לחובות חוקיות.",
+              ],
+              items: [
+                "באפשרותך לכבות התראות דרך האפליקציה או דרך הגדרות המכשיר.",
+                "באפשרותך לבחור לא להעלות תמונות, תמונות בקשה או הודעות קוליות.",
+                "בהתאם לאזור מגוריך, ייתכן שיש לך גם זכויות לבקש גישה, תיקון או מחיקה של מידע אישי.",
+              ],
+            },
+            {
+              id: "children",
+              title: "7. פרטיות ילדים",
+              paragraphs: [
+                "האפליקציה אינה מיועדת לילדים צעירים. מפרסם האפליקציה לא אמור לאסוף ביודעין מידע אישי מילדים בניגוד לחוק החל.",
+              ],
+            },
+            {
+              id: "changes-contact",
+              title: "8. שינויים ויצירת קשר",
+              paragraphs: [
+                "מדיניות זו עשויה להתעדכן כאשר תכונות האפליקציה, נוהלי הנתונים או ספקי השירות משתנים.",
+                "לשאלות או בקשות בנושא פרטיות, על המשתמש לפנות למפרסם האפליקציה באמצעות פרטי הקשר המופיעים ברשומת האפליקציה או בערוץ התמיכה הרשמי.",
+              ],
+            },
+          ],
+        },
+      };
+
+      const brandKicker = document.getElementById("brand-kicker");
+      const pageTitle = document.getElementById("page-title");
+      const pageLead = document.getElementById("page-lead");
+      const languageLabel = document.getElementById("language-label");
+      const effectiveDate = document.getElementById("effective-date");
+      const policyScope = document.getElementById("policy-scope");
+      const tocTitle = document.getElementById("toc-title");
+      const tocList = document.getElementById("toc-list");
+      const sectionsRoot = document.getElementById("sections-root");
+      const footerText = document.getElementById("footer-text");
+      const langButtons = document.querySelectorAll(".lang-button");
+
+      function detectInitialLanguage() {
+        const fromQuery = new URLSearchParams(window.location.search).get("lang");
+        if (fromQuery && content[fromQuery]) {
+          return fromQuery;
+        }
+
+        const browserLanguage = (navigator.language || "en").toLowerCase();
+        if (browserLanguage.startsWith("ar")) {
+          return "ar";
+        }
+        if (browserLanguage.startsWith("he") || browserLanguage.startsWith("iw")) {
+          return "he";
+        }
+        return "en";
+      }
+
+      function renderLanguage(lang) {
+        const entry = content[lang] || content.en;
+        document.documentElement.lang = entry.htmlLang;
+        document.documentElement.dir = entry.dir;
+        document.body.dir = entry.dir;
+        document.body.dataset.lang = lang;
+        document.title = `MTA Auto Spare - ${entry.pageTitle}`;
+
+        brandKicker.textContent = entry.brandKicker;
+        pageTitle.textContent = entry.pageTitle;
+        pageLead.textContent = entry.pageLead;
+        languageLabel.textContent = entry.languageLabel;
+        effectiveDate.textContent = entry.effectiveDate;
+        policyScope.textContent = entry.policyScope;
+        tocTitle.textContent = entry.tocTitle;
+        footerText.textContent = entry.footer;
+
+        tocList.innerHTML = "";
+        sectionsRoot.innerHTML = "";
+
+        for (const section of entry.sections) {
+          const tocItem = document.createElement("li");
+          const tocLink = document.createElement("a");
+          tocLink.className = "toc-link";
+          tocLink.href = `#${section.id}`;
+          tocLink.textContent = section.title;
+          tocItem.appendChild(tocLink);
+          tocList.appendChild(tocItem);
+
+          const article = document.createElement("article");
+          article.className = "section-card";
+          article.id = section.id;
+
+          const title = document.createElement("h2");
+          title.className = "section-title";
+          title.textContent = section.title;
+          article.appendChild(title);
+
+          for (const paragraphText of section.paragraphs || []) {
+            const paragraph = document.createElement("p");
+            paragraph.className = "section-text";
+            paragraph.textContent = paragraphText;
+            article.appendChild(paragraph);
+          }
+
+          if (section.items && section.items.length) {
+            const list = document.createElement("ul");
+            list.className = "section-list";
+            for (const itemText of section.items) {
+              const item = document.createElement("li");
+              item.textContent = itemText;
+              list.appendChild(item);
+            }
+            article.appendChild(list);
+          }
+
+          sectionsRoot.appendChild(article);
+        }
+
+        for (const button of langButtons) {
+          button.classList.toggle("is-active", button.dataset.lang === lang);
+        }
+
+        const url = new URL(window.location.href);
+        url.searchParams.set("lang", lang);
+        history.replaceState(null, "", url);
+      }
+
+      for (const button of langButtons) {
+        button.addEventListener("click", () => renderLanguage(button.dataset.lang));
+      }
+
+      renderLanguage(detectInitialLanguage());
+    </script>
+  </body>
+</html>

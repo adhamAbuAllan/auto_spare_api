@@ -1,6 +1,5 @@
 import logging
 from datetime import datetime
-from pathlib import Path
 from itertools import zip_longest
 from django.conf import settings
 from django.db import transaction
@@ -17,7 +16,8 @@ from django.db.models import (
     When,
 )
 from django.db.models.functions import Coalesce
-from django.http import Http404, HttpResponse, JsonResponse
+from django.http import JsonResponse
+from django.shortcuts import render
 from django.utils import timezone
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
@@ -97,9 +97,6 @@ from chat.push_notifications import (
 
 
 logger = logging.getLogger(__name__)
-_PRIVACY_POLICY_FILE = (
-    Path.home() / "StudioProjects" / "mta_auto_spare" / "docs" / "index.html"
-)
 _car_catalog_sync_service = CarCatalogSyncService()
 
 
@@ -236,13 +233,7 @@ def app_update(request):
 @api_view(["GET"])
 @permission_classes([AllowAny])
 def privacy_policy_page(request):
-    if not _PRIVACY_POLICY_FILE.exists():
-        raise Http404("Privacy policy page is not available.")
-
-    return HttpResponse(
-        _PRIVACY_POLICY_FILE.read_text(encoding="utf-8"),
-        content_type="text/html; charset=utf-8",
-    )
+    return render(request, "api/privacy_policy.html")
 
 
 class ApiUserViewSet(

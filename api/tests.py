@@ -109,6 +109,16 @@ class HomePageTests(ApiTestCase):
         self.assertContains(response, 'data-lang="ar"')
 
 
+class PrivacyPolicyPageTests(ApiTestCase):
+    def test_privacy_policy_page_serves_bundled_html(self):
+        response = self.client.get("/privacy-policy/?lang=en")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response["Content-Type"], "text/html; charset=utf-8")
+        self.assertContains(response, "MTA Auto Spare Privacy Policy")
+        self.assertContains(response, 'data-lang="en"')
+
+
 class AppUpdateApiTests(ApiTestCase):
     @override_settings(
         APP_UPDATE_LATEST_ANDROID_VERSION="3.1.0",

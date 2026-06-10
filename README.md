@@ -79,6 +79,20 @@ python manage.py migrate
 python manage.py runserver
 ```
 
+## Privacy Policy
+
+The privacy policy page is served by Django at:
+
+```text
+/privacy-policy/?lang=en
+```
+
+On Render, use:
+
+```text
+https://auto-spare-api.onrender.com/privacy-policy/?lang=en
+```
+
 ## Ngrok Setup
 
 To expose the backend through an ngrok URL:
