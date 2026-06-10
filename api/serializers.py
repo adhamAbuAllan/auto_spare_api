@@ -1,4 +1,6 @@
 from django.db import IntegrityError, transaction
+from django.contrib.auth.password_validation import validate_password
+from django.utils import timezone
 from django.utils.text import slugify
 from rest_framework import serializers
 
@@ -28,6 +30,11 @@ from .models import (
     UserCarModel,
 )
 from .car_catalog_sync import build_signed_model_image_url
+from .firebase import (
+    FirebaseAuthUnavailable,
+    FirebaseTokenVerificationError,
+    verify_firebase_id_token,
+)
 from .translation import (
     localize_part_request_status_label,
     resolve_requested_translation_language,
@@ -35,13 +42,23 @@ from .translation import (
 )
 
 
+def normalize_phone_number(value):
+    normalized = str(value or "").strip().replace(" ", "").replace("-", "")
+    if not normalized.startswith("+") or not normalized[1:].isdigit():
+        raise serializers.ValidationError(
+            "Enter a phone number in E.164 format, for example +966555000111."
+        )
+    if len(normalized) < 9 or len(normalized) > 16:
+        raise serializers.ValidationError("Enter a valid phone number.")
+    return normalized
+
+
 class ApiUserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=False)
     rating = serializers.DecimalField(
         max_digits=3, decimal_places=2, required=False, allow_null=True
     )
-    email = serializers.EmailField(required=True)
-    username = serializers.CharField(required=False, allow_blank=True)
+    phone = serializers.CharField(required=True)
     supported_car_model_ids = serializers.ListField(
         child=serializers.IntegerField(min_value=1),
         required=False,
@@ -53,11 +70,10 @@ class ApiUserSerializer(serializers.ModelSerializer):
         model = ApiUser
         fields = [
             "id",
-            "email",
-            "username",
             "name",
             "avatar",
             "phone",
+            "phone_verified_at",
             "city",
             "role",
             "rating",
@@ -75,6 +91,7 @@ class ApiUserSerializer(serializers.ModelSerializer):
             "is_admin",
             "blocked_at",
             "blocked_reason",
+            "phone_verified_at",
             "created_at",
         ]
 
@@ -101,8 +118,7 @@ class ApiUserSerializer(serializers.ModelSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
 
-        email = str(attrs.get("email", "")).strip()
-        username = str(attrs.get("username", "")).strip() or email
+        phone = str(attrs.get("phone", "")).strip()
         role = str(
             attrs.get(
                 "role",
@@ -111,9 +127,8 @@ class ApiUserSerializer(serializers.ModelSerializer):
             or ApiUser.ROLE_USER
         ).strip()
 
-        if email:
-            attrs["email"] = email
-        attrs["username"] = username
+        if phone:
+            attrs["phone"] = normalize_phone_number(phone)
         if role != ApiUser.ROLE_SUPPLIER:
             attrs["supported_car_model_ids"] = []
 
@@ -122,10 +137,8 @@ class ApiUserSerializer(serializers.ModelSerializer):
             queryset = queryset.exclude(pk=self.instance.pk)
 
         errors = {}
-        if email and queryset.filter(email__iexact=email).exists():
-            errors["email"] = "A user with this email already exists."
-        if username and queryset.filter(username__iexact=username).exists():
-            errors["username"] = "A user with this username already exists."
+        if phone and queryset.filter(phone=attrs["phone"]).exists():
+            errors["phone"] = "A user with this phone number already exists."
 
         if errors:
             raise serializers.ValidationError(errors)
@@ -135,8 +148,6 @@ class ApiUserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop("password", None)
         supported_car_model_ids = validated_data.pop("supported_car_model_ids", [])
-        if not validated_data.get("username"):
-            validated_data["username"] = validated_data.get("email")
         try:
             with transaction.atomic():
                 user = ApiUser(**validated_data)
@@ -155,7 +166,102 @@ class ApiUserSerializer(serializers.ModelSerializer):
                     )
         except IntegrityError as exc:
             raise serializers.ValidationError(
-                {"detail": "A user with this email or username already exists."}
+                {"detail": "A user with this phone number already exists."}
+            ) from exc
+        return user
+
+
+class FirebaseRegistrationSerializer(serializers.Serializer):
+    firebase_id_token = serializers.CharField(write_only=True)
+    phone = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+    name = serializers.CharField(max_length=120)
+    avatar = serializers.ImageField(required=False, allow_null=True)
+    city = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    role = serializers.ChoiceField(choices=ApiUser.ROLE_CHOICES, default=ApiUser.ROLE_USER)
+    supported_car_model_ids = serializers.ListField(
+        child=serializers.IntegerField(min_value=1),
+        required=False,
+        write_only=True,
+    )
+
+    def validate_supported_car_model_ids(self, value):
+        return ApiUserSerializer().validate_supported_car_model_ids(value)
+
+    def validate_phone(self, value):
+        return normalize_phone_number(value)
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        phone = attrs["phone"]
+        role = attrs.get("role") or ApiUser.ROLE_USER
+
+        if role != ApiUser.ROLE_SUPPLIER:
+            attrs["supported_car_model_ids"] = []
+
+        if ApiUser.objects.filter(phone=phone).exists():
+            raise serializers.ValidationError(
+                {"phone": "A user with this phone number already exists."}
+            )
+
+        try:
+            decoded_token = verify_firebase_id_token(attrs["firebase_id_token"])
+        except FirebaseAuthUnavailable as exc:
+            raise serializers.ValidationError(
+                {"firebase_id_token": "Firebase authentication is not configured."}
+            ) from exc
+        except FirebaseTokenVerificationError as exc:
+            raise serializers.ValidationError(
+                {"firebase_id_token": "Firebase ID token is invalid."}
+            ) from exc
+
+        try:
+            token_phone = normalize_phone_number(decoded_token.get("phone_number"))
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError(
+                {"firebase_id_token": "Firebase ID token is missing a verified phone number."}
+            ) from exc
+        if token_phone != phone:
+            raise serializers.ValidationError(
+                {"phone": "Firebase verified phone number does not match."}
+            )
+
+        firebase_uid = str(decoded_token.get("uid") or decoded_token.get("user_id") or "").strip()
+        if not firebase_uid:
+            raise serializers.ValidationError(
+                {"firebase_id_token": "Firebase ID token is missing a user id."}
+            )
+        if ApiUser.objects.filter(firebase_uid=firebase_uid).exists():
+            raise serializers.ValidationError(
+                {"firebase_id_token": "This Firebase account is already registered."}
+            )
+
+        attrs["firebase_uid"] = firebase_uid
+        return attrs
+
+    def create(self, validated_data):
+        password = validated_data.pop("password")
+        supported_car_model_ids = validated_data.pop("supported_car_model_ids", [])
+        validated_data.pop("firebase_id_token", None)
+        validated_data["phone_verified_at"] = timezone.now()
+
+        try:
+            with transaction.atomic():
+                user = ApiUser.objects.create_user(password=password, **validated_data)
+                if supported_car_model_ids:
+                    UserCarModel.objects.bulk_create(
+                        [
+                            UserCarModel(user=user, car_model_id=model_id)
+                            for model_id in supported_car_model_ids
+                        ]
+                    )
+        except IntegrityError as exc:
+            raise serializers.ValidationError(
+                {"detail": "A user with this phone number already exists."}
             ) from exc
         return user
 
@@ -626,7 +732,6 @@ class PublicUserProfileSerializer(UserBriefSerializer):
     class Meta(UserBriefSerializer.Meta):
         model = ApiUser
         fields = UserBriefSerializer.Meta.fields + [
-            "email",
             "phone",
             "city",
             "role",
@@ -892,6 +997,8 @@ class MessageCreateSerializer(serializers.ModelSerializer):
 
 
 class MeSerializer(ApiUserSerializer):
+    phone = serializers.CharField(read_only=True)
+    phone_verified_at = serializers.DateTimeField(read_only=True)
     supported_car_models = serializers.SerializerMethodField()
     supported_car_model_ids = serializers.ListField(
         child=serializers.IntegerField(min_value=1),
@@ -903,11 +1010,10 @@ class MeSerializer(ApiUserSerializer):
         model = ApiUser
         fields = [
             "id",
-            "email",
-            "username",
             "name",
             "avatar",
             "phone",
+            "phone_verified_at",
             "city",
             "role",
             "rating",
@@ -923,8 +1029,8 @@ class MeSerializer(ApiUserSerializer):
         ]
         read_only_fields = [
             "id",
-            "email",
-            "username",
+            "phone",
+            "phone_verified_at",
             "role",
             "rating",
             "is_active",

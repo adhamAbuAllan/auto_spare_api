@@ -37,7 +37,7 @@ class CarModelAdmin(admin.ModelAdmin):
 class UserCarModelAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "car_model", "created_at")
     list_filter = ("car_model__make",)
-    search_fields = ("user__username", "user__email", "car_model__name", "car_model__make__name")
+    search_fields = ("user__phone", "user__name", "car_model__name", "car_model__make__name")
     ordering = ("-created_at",)
 
 
@@ -45,7 +45,7 @@ class UserCarModelAdmin(admin.ModelAdmin):
 class PartRequestAccessAdmin(admin.ModelAdmin):
     list_display = ("id", "part_request", "user", "status", "conversation", "requested_at")
     list_filter = ("status",)
-    search_fields = ("part_request__title", "user__username", "user__email")
+    search_fields = ("part_request__title", "user__phone", "user__name")
     ordering = ("-requested_at",)
 
 
@@ -62,10 +62,10 @@ class UserReportAdmin(admin.ModelAdmin):
     )
     list_filter = ("status", "created_at")
     search_fields = (
-        "reported_user__username",
-        "reported_user__email",
-        "reporter__username",
-        "reporter__email",
+        "reported_user__phone",
+        "reported_user__name",
+        "reporter__phone",
+        "reporter__name",
         "reason",
         "details",
         "admin_notes",
@@ -77,5 +77,5 @@ class UserReportAdmin(admin.ModelAdmin):
 class MobileDeviceAdmin(admin.ModelAdmin):
     list_display = ("id", "user", "platform", "device_id", "is_active", "last_seen_at")
     list_filter = ("platform", "is_active")
-    search_fields = ("user__username", "user__email", "device_id", "device_name")
+    search_fields = ("user__phone", "user__name", "device_id", "device_name")
     ordering = ("-last_seen_at", "-updated_at")

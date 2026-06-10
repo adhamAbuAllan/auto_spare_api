@@ -30,30 +30,26 @@ from .push_notifications import (
 class ChatPushNotificationTests(TestCase):
     def setUp(self):
         self.sender = ApiUser.objects.create_user(
-            username="sender",
-            email="sender@example.com",
+            phone="+15550202001",
             name="Sender User",
             role=ApiUser.ROLE_SUPPLIER,
             password="test1234",
         )
         self.preview_enabled_recipient = ApiUser.objects.create_user(
-            username="preview-on",
-            email="preview-on@example.com",
+            phone="+15550202002",
             name="Preview Enabled",
             role=ApiUser.ROLE_SUPPLIER,
             password="test1234",
         )
         self.preview_disabled_recipient = ApiUser.objects.create_user(
-            username="preview-off",
-            email="preview-off@example.com",
+            phone="+15550202003",
             name="Preview Disabled",
             role=ApiUser.ROLE_SUPPLIER,
             password="test1234",
             chat_message_preview_enabled=False,
         )
         self.push_disabled_recipient = ApiUser.objects.create_user(
-            username="push-off",
-            email="push-off@example.com",
+            phone="+15550202004",
             name="Push Disabled",
             role=ApiUser.ROLE_SUPPLIER,
             password="test1234",

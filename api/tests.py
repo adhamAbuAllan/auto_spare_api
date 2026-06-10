@@ -27,6 +27,7 @@ from .models import (
     UserCarModel,
     UserReport,
 )
+from .firebase import FirebaseTokenVerificationError
 from .translation import TranslationValue, localize_part_request_status_label
 
 
@@ -58,16 +59,16 @@ class ApiTestCase(APITestCase):
     def create_user(self, **overrides):
         suffix = ApiUser.objects.count() + 1
         payload = {
-            "username": f"user{suffix}",
-            "email": f"user{suffix}@example.com",
             "name": f"User {suffix}",
             "phone": f"+15550000{suffix:03d}",
             "city": "Riyadh",
             "role": "user",
-            "password": "test1234",
+            "password": "Secur3Pass!2026",
         }
         payload.update(overrides)
         password = payload.pop("password")
+        payload.pop("username", None)
+        payload.pop("email", None)
         return ApiUser.objects.create_user(password=password, **payload)
 
     def create_car_model(self, *, make_name="Toyota", model_name="Camry", **overrides):
@@ -196,45 +197,89 @@ class AppUpdateApiTests(ApiTestCase):
 
 
 class UsersApiTests(ApiTestCase):
-    def test_create_user(self):
+    def test_user_manager_creates_phone_user(self):
+        user = ApiUser.objects.create_user(
+            phone="+966555000100",
+            name="Manager User",
+            password="test1234",
+        )
+
+        self.assertEqual(user.phone, "+966555000100")
+        self.assertEqual(user.name, "Manager User")
+        self.assertTrue(user.check_password("test1234"))
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+
+    def test_user_manager_creates_superuser(self):
+        user = ApiUser.objects.create_superuser(
+            phone="+966555000101",
+            password="test1234",
+        )
+
+        self.assertEqual(user.phone, "+966555000101")
+        self.assertEqual(user.name, "+966555000101")
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
+
+    @patch("api.serializers.verify_firebase_id_token")
+    def test_register_user_with_verified_firebase_phone(self, verify_token):
+        verify_token.return_value = {
+            "uid": "firebase-user-1",
+            "phone_number": "+966555000111",
+        }
+
         response = self.client.post(
-            "/api/users/",
+            "/api/register/",
             data={
-                "email": "alice@example.com",
-                "username": "alice",
+                "firebase_id_token": "valid-firebase-token",
                 "name": "Alice",
                 "phone": "+966555000111",
                 "city": "Riyadh",
                 "role": "user",
                 "rating": "4.50",
-                "password": "test1234",
+                "password": "Secur3Pass!2026",
             },
             format="json",
         )
         self.assertEqual(response.status_code, 201)
         self.assertEqual(ApiUser.objects.count(), 1)
-        self.assertEqual(ApiUser.objects.first().name, "Alice")
-        self.assertEqual(ApiUser.objects.first().role, "user")
+        user = ApiUser.objects.first()
+        payload = response.json()
+        self.assertEqual(user.name, "Alice")
+        self.assertEqual(user.phone, "+966555000111")
+        self.assertEqual(user.firebase_uid, "firebase-user-1")
+        self.assertIsNotNone(user.phone_verified_at)
+        self.assertEqual(user.role, "user")
+        self.assertIn("access", payload)
+        self.assertIn("refresh", payload)
+        self.assertEqual(payload["user"]["phone"], "+966555000111")
+        self.assertIn("chat_push_enabled", payload["user"])
+        self.assertIn("chat_message_preview_enabled", payload["user"])
 
-    def test_create_user_creates_supported_car_model_links(self):
+    @patch("api.serializers.verify_firebase_id_token")
+    def test_register_supplier_creates_supported_car_model_links(self, verify_token):
         camry = self.create_car_model(make_name="Toyota", model_name="Camry")
         elantra = self.create_car_model(make_name="Hyundai", model_name="Elantra")
+        verify_token.return_value = {
+            "uid": "firebase-supplier-1",
+            "phone_number": "+966555000112",
+        }
 
         response = self.client.post(
-            "/api/users/",
+            "/api/register/",
             data={
-                "email": "garage@example.com",
-                "username": "garage-owner",
+                "firebase_id_token": "valid-firebase-token",
                 "name": "Garage Owner",
+                "phone": "+966555000112",
                 "role": "supplier",
-                "password": "test1234",
+                "password": "Secur3Pass!2026",
                 "supported_car_model_ids": [camry.id, elantra.id, camry.id],
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, 201)
-        created_user = ApiUser.objects.get(username="garage-owner")
+        created_user = ApiUser.objects.get(phone="+966555000112")
         self.assertEqual(
             set(
                 UserCarModel.objects.filter(user=created_user).values_list(
@@ -244,51 +289,81 @@ class UsersApiTests(ApiTestCase):
             {camry.id, elantra.id},
         )
 
-    def test_create_user_returns_clear_message_when_email_exists(self):
-        self.create_user(username="alice", email="alice@example.com")
+    @patch("api.serializers.verify_firebase_id_token")
+    def test_register_user_returns_clear_message_when_phone_exists(self, verify_token):
+        self.create_user(phone="+966555000112")
+        verify_token.return_value = {
+            "uid": "firebase-user-duplicate",
+            "phone_number": "+966555000112",
+        }
 
         response = self.client.post(
-            "/api/users/",
+            "/api/register/",
             data={
-                "email": "alice@example.com",
-                "username": "alice_2",
                 "name": "Alice 2",
                 "phone": "+966555000112",
                 "city": "Riyadh",
                 "role": "user",
-                "password": "test1234",
+                "password": "Secur3Pass!2026",
+                "firebase_id_token": "valid-firebase-token",
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, 400)
         payload = response.json()
-        self.assertEqual(payload["message"], "A user with this email already exists.")
+        self.assertEqual(payload["message"], "A user with this phone number already exists.")
         self.assertEqual(payload["status_code"], 400)
-        self.assertIn("email", payload)
+        self.assertIn("phone", payload)
 
-    def test_create_user_returns_clear_message_when_username_exists(self):
-        self.create_user(username="alice", email="alice@example.com")
+    @patch("api.serializers.verify_firebase_id_token")
+    def test_register_user_rejects_firebase_phone_mismatch(self, verify_token):
+        verify_token.return_value = {
+            "uid": "firebase-user-mismatch",
+            "phone_number": "+966555000114",
+        }
 
         response = self.client.post(
-            "/api/users/",
+            "/api/register/",
             data={
-                "email": "alice-2@example.com",
-                "username": "alice",
                 "name": "Alice 2",
                 "phone": "+966555000113",
                 "city": "Riyadh",
                 "role": "user",
-                "password": "test1234",
+                "password": "Secur3Pass!2026",
+                "firebase_id_token": "valid-firebase-token",
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, 400)
         payload = response.json()
-        self.assertEqual(payload["message"], "A user with this username already exists.")
+        self.assertEqual(payload["message"], "Firebase verified phone number does not match.")
         self.assertEqual(payload["status_code"], 400)
-        self.assertIn("username", payload)
+        self.assertIn("phone", payload)
+
+    @patch("api.serializers.verify_firebase_id_token")
+    def test_register_user_rejects_invalid_firebase_token(self, verify_token):
+        verify_token.side_effect = FirebaseTokenVerificationError("invalid")
+
+        response = self.client.post(
+            "/api/register/",
+            data={
+                "name": "Alice 2",
+                "phone": "+966555000113",
+                "city": "Riyadh",
+                "role": "user",
+                "password": "Secur3Pass!2026",
+                "firebase_id_token": "invalid-firebase-token",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Firebase ID token is invalid.")
+        self.assertEqual(payload["status_code"], 400)
+        self.assertIn("firebase_id_token", payload)
 
     def test_list_users_returns_paginated_results_for_authenticated_user(self):
         viewer = self.create_user(username="viewer", email="viewer@example.com")
@@ -311,7 +386,7 @@ class UsersApiTests(ApiTestCase):
         self.assertEqual(payload["results"][1]["name"], "Alice")
         self.assertEqual(payload["results"][2]["role"], "supplier")
 
-    def test_retrieve_supplier_profile_includes_email_phone_and_supported_car_models(self):
+    def test_retrieve_supplier_profile_includes_phone_and_supported_car_models(self):
         viewer = self.create_user(username="viewer", email="viewer@example.com")
         audi_a4 = self.create_car_model(make_name="Audi", model_name="A4")
         bmw_x5 = self.create_car_model(make_name="BMW", model_name="X5")
@@ -331,7 +406,6 @@ class UsersApiTests(ApiTestCase):
 
         self.assertEqual(response.status_code, 200)
         payload = response.json()
-        self.assertEqual(payload["email"], supplier.email)
         self.assertEqual(payload["phone"], supplier.phone)
         self.assertEqual(payload["role"], "supplier")
         self.assertEqual(
@@ -343,26 +417,26 @@ class UsersApiTests(ApiTestCase):
         response = self.client.post(
             "/api/token/",
             data={
-                "username": "missing-user",
-                "password": "test1234",
+                "phone": "+966555999999",
+                "password": "Secur3Pass!2026",
             },
             format="json",
         )
 
         self.assertEqual(response.status_code, 401)
         payload = response.json()
-        self.assertEqual(payload["detail"], "No user found with this username.")
-        self.assertEqual(payload["message"], "No user found with this username.")
+        self.assertEqual(payload["detail"], "No user found with this phone number.")
+        self.assertEqual(payload["message"], "No user found with this phone number.")
         self.assertEqual(payload["status_code"], 401)
         self.assertEqual(payload["code"], "user_not_found")
 
     def test_login_returns_clear_message_when_password_is_incorrect(self):
-        self.create_user(username="known-user", email="known@example.com")
+        user = self.create_user()
 
         response = self.client.post(
             "/api/token/",
             data={
-                "username": "known-user",
+                "phone": user.phone,
                 "password": "wrong-password",
             },
             format="json",
@@ -2083,7 +2157,7 @@ class UserModerationApiTests(ApiTestCase):
         self.client.force_authenticate(user=None)
         blocked_login_response = self.client.post(
             "/api/token/",
-            data={"username": "blocked-user", "password": "secret123"},
+            data={"phone": blocked_user.phone, "password": "secret123"},
             format="json",
         )
 
@@ -2109,7 +2183,7 @@ class UserModerationApiTests(ApiTestCase):
         self.client.force_authenticate(user=None)
         login_response = self.client.post(
             "/api/token/",
-            data={"username": "blocked-user", "password": "secret123"},
+            data={"phone": blocked_user.phone, "password": "secret123"},
             format="json",
         )
 

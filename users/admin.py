@@ -8,8 +8,7 @@ from .models import User
 class UserAdmin(DjangoUserAdmin):
     list_display = (
         "id",
-        "username",
-        "email",
+        "phone",
         "name",
         "role",
         "is_staff",
@@ -17,29 +16,75 @@ class UserAdmin(DjangoUserAdmin):
         "blocked_at",
         "created_at",
     )
-    search_fields = ("username", "email", "name", "phone", "city")
+    search_fields = ("phone", "name", "city")
     list_filter = ("role", "is_staff", "is_superuser", "is_active")
     ordering = ("-created_at",)
-    fieldsets = DjangoUserAdmin.fieldsets + (
+    fieldsets = (
         (
-            "Marketplace",
+            None,
+            {
+                "fields": (
+                    "phone",
+                    "password",
+                )
+            },
+        ),
+        (
+            "Profile",
             {
                 "fields": (
                     "name",
                     "avatar",
-                    "phone",
                     "city",
                     "role",
                     "rating",
+                    "firebase_uid",
+                    "phone_verified_at",
+                )
+            },
+        ),
+        (
+            "Permissions",
+            {
+                "fields": (
+                    "is_active",
+                    "is_staff",
+                    "is_superuser",
+                    "groups",
+                    "user_permissions",
+                )
+            },
+        ),
+        (
+            "Marketplace",
+            {
+                "fields": (
                     "chat_push_enabled",
                     "chat_message_preview_enabled",
                     "chat_last_seen_at",
                     "blocked_at",
                     "blocked_reason",
                     "blocked_by",
-                    "created_at",
                 )
             },
         ),
+        ("Important dates", {"fields": ("last_login", "date_joined", "created_at")}),
     )
-    readonly_fields = ("created_at", "chat_last_seen_at", "blocked_at", "blocked_by")
+    add_fieldsets = (
+        (
+            None,
+            {
+                "classes": ("wide",),
+                "fields": ("phone", "name", "password1", "password2"),
+            },
+        ),
+    )
+    readonly_fields = (
+        "created_at",
+        "chat_last_seen_at",
+        "blocked_at",
+        "blocked_by",
+        "last_login",
+        "date_joined",
+        "phone_verified_at",
+    )

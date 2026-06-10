@@ -15,7 +15,8 @@ class PartRequestAdmin(admin.ModelAdmin):
     search_fields = (
         "title",
         "description",
-        "requester__username",
+        "requester__phone",
+        "requester__name",
         "car_model__name",
         "car_model__make__name",
     )

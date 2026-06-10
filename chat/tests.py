@@ -48,21 +48,18 @@ class ChatConsumerTests(TransactionTestCase):
     def setUp(self):
         reset_runtime_state()
         self.buyer = ApiUser.objects.create_user(
-            username="buyer",
-            email="buyer@example.com",
+            phone="+15550101001",
             name="Buyer",
             password="test1234",
         )
         self.seller = ApiUser.objects.create_user(
-            username="seller",
-            email="seller@example.com",
+            phone="+15550101002",
             name="Seller",
             role="supplier",
             password="test1234",
         )
         self.outsider = ApiUser.objects.create_user(
-            username="outsider",
-            email="outsider@example.com",
+            phone="+15550101003",
             name="Outsider",
             password="test1234",
         )

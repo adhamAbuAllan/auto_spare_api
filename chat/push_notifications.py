@@ -1,27 +1,21 @@
 import logging
 from collections import defaultdict
 from collections.abc import Mapping
-from pathlib import Path
 
 from django.conf import settings
 
+from api.firebase import get_firebase_app
 from api.models import ApiUser, ConversationParticipant, MobileDevice
 
 logger = logging.getLogger("chat.push")
 
 try:
-    import firebase_admin
-    from firebase_admin import credentials, messaging
+    from firebase_admin import messaging
 except ImportError:  # pragma: no cover - dependency is optional at import time
-    firebase_admin = None
-    credentials = None
     messaging = None
 
 
-_FIREBASE_APP = None
 _MISSING_SDK_LOGGED = False
-_MISSING_SETTINGS_LOGGED = False
-_MISSING_FILE_LOGGED = False
 
 
 def _mask_push_token(value):
@@ -40,63 +34,16 @@ def _truncate_text(value, *, limit=140):
     return normalized[: max(limit - 3, 0)].rstrip() + "..."
 
 
-def _resolve_service_account_path():
-    configured = str(getattr(settings, "FCM_SERVICE_ACCOUNT_FILE", "") or "").strip()
-    if not configured:
-        return None
-
-    path = Path(configured)
-    if not path.is_absolute():
-        path = Path(settings.BASE_DIR) / path
-    return path
-
-
 def _get_firebase_app():
-    global _FIREBASE_APP, _MISSING_SDK_LOGGED, _MISSING_SETTINGS_LOGGED, _MISSING_FILE_LOGGED
+    global _MISSING_SDK_LOGGED
 
-    if _FIREBASE_APP is not None:
-        return _FIREBASE_APP
-
-    if firebase_admin is None or credentials is None or messaging is None:
+    if messaging is None:
         if not _MISSING_SDK_LOGGED:
             logger.info("Firebase Admin SDK is not installed; chat push notifications are disabled.")
             _MISSING_SDK_LOGGED = True
         return None
 
-    service_account_path = _resolve_service_account_path()
-    if service_account_path is None:
-        if not _MISSING_SETTINGS_LOGGED:
-            logger.info(
-                "FCM_SERVICE_ACCOUNT_FILE is not configured; chat push notifications are disabled."
-            )
-            _MISSING_SETTINGS_LOGGED = True
-        return None
-
-    if not service_account_path.exists():
-        if not _MISSING_FILE_LOGGED:
-            logger.warning(
-                "FCM service account file was not found at %s; chat push notifications are disabled.",
-                service_account_path,
-            )
-            _MISSING_FILE_LOGGED = True
-        return None
-
-    try:
-        _FIREBASE_APP = firebase_admin.get_app()
-    except ValueError:
-        try:
-            _FIREBASE_APP = firebase_admin.initialize_app(
-                credentials.Certificate(str(service_account_path))
-            )
-            logger.info(
-                "Firebase Admin SDK initialized for chat push notifications using %s.",
-                service_account_path,
-            )
-        except Exception as exc:  # pragma: no cover - only hit with real Firebase config failures
-            logger.warning("Unable to initialize Firebase Admin SDK: %s", exc)
-            return None
-
-    return _FIREBASE_APP
+    return get_firebase_app()
 
 
 def _group_active_android_devices(*, user_ids):

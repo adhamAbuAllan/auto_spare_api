@@ -1,10 +1,44 @@
 from django.conf import settings
-from django.contrib.auth.models import AbstractUser
+from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
+from django.utils import timezone
 from django.utils.text import slugify
 
 
-class ApiUser(AbstractUser):
+class ApiUserManager(BaseUserManager):
+    use_in_migrations = True
+
+    def _normalize_phone(self, phone):
+        return str(phone or "").strip()
+
+    def create_user(self, phone, password=None, **extra_fields):
+        phone = self._normalize_phone(phone)
+        if not phone:
+            raise ValueError("The phone number must be set.")
+        user = self.model(phone=phone, **extra_fields)
+        if password:
+            user.set_password(password)
+        else:
+            user.set_unusable_password()
+        user.save(using=self._db)
+        return user
+
+    def create_superuser(self, phone, password=None, **extra_fields):
+        extra_fields.setdefault("is_staff", True)
+        extra_fields.setdefault("is_superuser", True)
+        extra_fields.setdefault("is_active", True)
+        extra_fields.setdefault("role", ApiUser.ROLE_USER)
+        extra_fields.setdefault("name", phone)
+
+        if extra_fields.get("is_staff") is not True:
+            raise ValueError("Superuser must have is_staff=True.")
+        if extra_fields.get("is_superuser") is not True:
+            raise ValueError("Superuser must have is_superuser=True.")
+
+        return self.create_user(phone, password, **extra_fields)
+
+
+class ApiUser(AbstractBaseUser, PermissionsMixin):
     ROLE_USER = "user"
     ROLE_SUPPLIER = "supplier"
     ROLE_CHOICES = [
@@ -12,13 +46,16 @@ class ApiUser(AbstractUser):
         (ROLE_SUPPLIER, "Supplier"),
     ]
 
-    email = models.EmailField(unique=True, blank=True, null=True)
     name = models.CharField(max_length=120)
     avatar = models.ImageField(upload_to="avatars/", blank=True, null=True)
-    phone = models.CharField(max_length=30, blank=True)
+    phone = models.CharField(max_length=30, unique=True)
+    firebase_uid = models.CharField(max_length=128, unique=True, blank=True, null=True)
+    phone_verified_at = models.DateTimeField(null=True, blank=True)
     city = models.CharField(max_length=120, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_USER)
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
+    is_staff = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
     chat_push_enabled = models.BooleanField(default=True)
     chat_message_preview_enabled = models.BooleanField(default=True)
     chat_last_seen_at = models.DateTimeField(null=True, blank=True)
@@ -31,11 +68,16 @@ class ApiUser(AbstractUser):
         blank=True,
         related_name="blocked_accounts",
     )
+    date_joined = models.DateTimeField(default=timezone.now)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    objects = ApiUserManager()
+
+    USERNAME_FIELD = "phone"
+    REQUIRED_FIELDS = ["name"]
  
     def __str__(self):
-        label = self.name or self.email or self.username
+        label = self.name or self.phone
         return f"{label} ({self.role})"
 
     @property

@@ -26,6 +26,8 @@ from rest_framework.generics import RetrieveUpdateDestroyAPIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 
 from .models import (
     ApiUser,
@@ -52,6 +54,7 @@ from .serializers import (
     ConversationListSerializer,
     ConversationParticipantSerializer,
     ConversationSerializer,
+    FirebaseRegistrationSerializer,
     MeSerializer,
     MobileDeviceSerializer,
     MessageCreateSerializer,
@@ -245,16 +248,10 @@ def privacy_policy_page(request):
 class ApiUserViewSet(
     mixins.RetrieveModelMixin,
     mixins.ListModelMixin,
-    mixins.CreateModelMixin,
     viewsets.GenericViewSet,
 ):
     queryset = ApiUser.objects.prefetch_related("car_model_links__car_model__make").order_by("id")
     serializer_class = ApiUserSerializer
-
-    def get_permissions(self):
-        if self.action == "create":
-            return [AllowAny()]
-        return [IsAuthenticated()]
 
     def get_serializer_class(self):
         if self.action == "retrieve":
@@ -300,6 +297,26 @@ class ApiUserViewSet(
             ]
         )
         return Response(ApiUserSerializer(user, context=self.get_serializer_context()).data)
+
+
+class FirebaseRegistrationView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [JSONParser, FormParser, MultiPartParser]
+
+    def post(self, request):
+        serializer = FirebaseRegistrationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        user = serializer.save()
+        refresh = RefreshToken.for_user(user)
+        user_serializer = MeSerializer(user, context={"request": request})
+        return Response(
+            {
+                "refresh": str(refresh),
+                "access": str(refresh.access_token),
+                "user": user_serializer.data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class SparePartViewSet(
