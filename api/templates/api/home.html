@@ -1,0 +1,102 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Auto Spare connects drivers and suppliers for fast car-part requests, offers, and chat.">
+    <title>Auto Spare</title>
+    <link rel="stylesheet" href="{% static 'api/home.css' %}">
+    <script src="{% static 'api/home.js' %}" defer></script>
+</head>
+<body>
+    <header class="site-header" aria-label="Auto Spare">
+        <a class="brand" href="/">
+            <span class="brand-mark" aria-hidden="true">AS</span>
+            <span class="brand-name">Auto Spare</span>
+        </a>
+        <nav class="language-switcher" aria-label="Language">
+            <button class="lang-button" type="button" data-lang="en" aria-pressed="true">English</button>
+            <button class="lang-button" type="button" data-lang="he" aria-pressed="false">עברית</button>
+            <button class="lang-button" type="button" data-lang="ar" aria-pressed="false">العربية</button>
+        </nav>
+    </header>
+
+    <main>
+        <section class="hero">
+            <div class="hero-content">
+                <p class="kicker" data-i18n="kicker">Auto spare marketplace</p>
+                <h1 data-i18n="title">Auto Spare</h1>
+                <p class="hero-copy" data-i18n="heroCopy">
+                    Find the right car parts faster. Auto Spare connects drivers, workshops,
+                    and suppliers through clear requests, photos, offers, and real-time chat.
+                </p>
+                <div class="hero-actions" aria-label="Primary links">
+                    <a class="button button-primary" href="/api/" data-i18n="apiButton">Open API</a>
+                    <a class="button button-secondary" href="/health/" data-i18n="healthButton">Health check</a>
+                </div>
+            </div>
+        </section>
+
+        <section class="content-band intro-band" aria-labelledby="intro-title">
+            <div class="section-inner split">
+                <div>
+                    <p class="kicker" data-i18n="introKicker">Built for daily spare-part work</p>
+                    <h2 id="intro-title" data-i18n="introTitle">Requests, suppliers, and chat in one flow.</h2>
+                </div>
+                <p class="section-copy" data-i18n="introCopy">
+                    Customers can describe the part they need, attach images, choose a car model,
+                    and continue the deal with a supplier once access is approved.
+                </p>
+            </div>
+        </section>
+
+        <section class="content-band features-band" aria-label="Features">
+            <div class="section-inner feature-grid">
+                <article class="feature-card accent-teal">
+                    <span class="feature-icon" aria-hidden="true">01</span>
+                    <h3 data-i18n="featureOneTitle">Create requests</h3>
+                    <p data-i18n="featureOneCopy">Add the part name, car model, city, price range, and photos.</p>
+                </article>
+                <article class="feature-card accent-gold">
+                    <span class="feature-icon" aria-hidden="true">02</span>
+                    <h3 data-i18n="featureTwoTitle">Match suppliers</h3>
+                    <p data-i18n="featureTwoCopy">Manage accepted access so the right supplier can handle the request.</p>
+                </article>
+                <article class="feature-card accent-coral">
+                    <span class="feature-icon" aria-hidden="true">03</span>
+                    <h3 data-i18n="featureThreeTitle">Keep the deal moving</h3>
+                    <p data-i18n="featureThreeCopy">Use chat, message status, notifications, and updates from one backend.</p>
+                </article>
+            </div>
+        </section>
+
+        <section class="content-band workflow-band" aria-labelledby="workflow-title">
+            <div class="section-inner">
+                <div class="workflow-heading">
+                    <p class="kicker" data-i18n="workflowKicker">Simple workflow</p>
+                    <h2 id="workflow-title" data-i18n="workflowTitle">From request to conversation.</h2>
+                </div>
+                <div class="workflow-list">
+                    <div class="workflow-item">
+                        <strong data-i18n="stepOneTitle">Describe the part</strong>
+                        <span data-i18n="stepOneCopy">The buyer submits structured details and images.</span>
+                    </div>
+                    <div class="workflow-item">
+                        <strong data-i18n="stepTwoTitle">Approve access</strong>
+                        <span data-i18n="stepTwoCopy">A supplier gets permission to continue with the request.</span>
+                    </div>
+                    <div class="workflow-item">
+                        <strong data-i18n="stepThreeTitle">Continue in chat</strong>
+                        <span data-i18n="stepThreeCopy">Both sides can discuss fit, price, and delivery in real time.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="site-footer">
+        <span data-i18n="footer">Auto Spare backend is online and ready for marketplace traffic.</span>
+    </footer>
+</body>
+</html>

@@ -98,6 +98,16 @@ class ApiTestCase(APITestCase):
         return car_model
 
 
+class HomePageTests(ApiTestCase):
+    def test_home_page_serves_multilingual_shell(self):
+        response = self.client.get("/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "Auto Spare")
+        self.assertContains(response, 'data-lang="he"')
+        self.assertContains(response, 'data-lang="ar"')
+
+
 class AppUpdateApiTests(ApiTestCase):
     @override_settings(
         APP_UPDATE_LATEST_ANDROID_VERSION="3.1.0",
