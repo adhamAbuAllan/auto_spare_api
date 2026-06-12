@@ -308,8 +308,11 @@ class CarMakeSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_models(self, obj):
+        models = getattr(obj, "active_models", None)
+        if models is None:
+            models = obj.models.filter(is_active=True)
         return CarModelSerializer(
-            obj.models.filter(is_active=True),
+            models,
             many=True,
             context=self.context,
         ).data

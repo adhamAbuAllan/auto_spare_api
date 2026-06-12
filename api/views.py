@@ -135,6 +135,20 @@ def health(request):
     return JsonResponse({"status": "ok"})
 
 
+@api_view(["GET"])
+@permission_classes([AllowAny])
+def car_catalog(request):
+    makes = CarMake.objects.prefetch_related(
+        Prefetch(
+            "models",
+            queryset=CarModel.objects.filter(is_active=True).order_by("name"),
+            to_attr="active_models",
+        )
+    ).order_by("name")
+    serializer = CarMakeSerializer(makes, many=True, context={"request": request})
+    return Response(serializer.data)
+
+
 def _version_parts(value):
     normalized = str(value or "").strip()
     if not normalized:

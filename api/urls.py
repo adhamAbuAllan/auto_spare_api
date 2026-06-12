@@ -6,6 +6,7 @@ from chat.views import chat_tester
 from .auth import ClearTokenObtainPairView
 from .views import (
     ApiUserViewSet,
+    car_catalog,
     CarMakeViewSet,
     CarModelViewSet,
     ConversationParticipantViewSet,
@@ -51,6 +52,7 @@ urlpatterns = [
     re_path(r"^v1/(?P<path>.*)$", car_images_api_proxy, name="car_images_api_proxy"),
     path("chat-tester/", chat_tester, name="chat_tester"),
     path("health/", health, name="health"),
+    path("car-catalog/", car_catalog, name="car_catalog"),
     path("app-update/", app_update, name="app_update"),
     path("me/", MeView.as_view(), name="me"),
     path("register/", FirebaseRegistrationView.as_view(), name="register"),

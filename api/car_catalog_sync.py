@@ -8,7 +8,7 @@ import threading
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.parse import quote, urlencode, urlparse
+from urllib.parse import quote, urlencode, urljoin, urlparse
 from urllib.request import Request, urlopen
 
 from django.conf import settings
@@ -223,6 +223,53 @@ class CarImagesApiClient:
             + " | ".join(errors)
         )
 
+    def _request_json_pages(self, path: str) -> list[dict[str, Any]]:
+        errors = []
+        for index, base_url in enumerate(self.base_urls):
+            url = f"{base_url}{path}"
+            try:
+                return self._request_json_pages_from_url(url, base_url)
+            except CarImagesApiError as exc:
+                errors.append(str(exc))
+                if index < len(self.base_urls) - 1:
+                    logger.warning(
+                        "Paginated car images API request failed through %s; "
+                        "trying fallback: %s",
+                        base_url,
+                        exc,
+                    )
+
+        raise CarImagesApiError(
+            "Car images API paginated request failed for all configured base URLs. "
+            + " | ".join(errors)
+        )
+
+    def _request_json_pages_from_url(self, url: str, base_url: str) -> list[dict[str, Any]]:
+        items = []
+        next_url = url
+        visited_urls = set()
+
+        while next_url:
+            if next_url in visited_urls:
+                raise CarImagesApiError(
+                    f"Car images API pagination loop detected for {next_url}."
+                )
+            visited_urls.add(next_url)
+
+            payload = self._request_json_from_url(next_url, base_url)
+            page_items = payload.get("data") or []
+            if not isinstance(page_items, list):
+                raise CarImagesApiError(
+                    f"Car images API returned invalid paginated data for {next_url}."
+                )
+            items.extend(page_items)
+
+            next_url = self._extract_next_page_url(payload, current_url=next_url)
+            if next_url:
+                next_url = self._normalize_next_page_url(next_url, base_url)
+
+        return items
+
     def _request_json_from_url(self, url: str, base_url: str) -> dict[str, Any]:
         headers = {
             "Accept": "application/json",
@@ -266,6 +313,42 @@ class CarImagesApiClient:
             )
         return data
 
+    def _extract_next_page_url(self, payload: dict[str, Any], *, current_url: str) -> str:
+        next_value = payload.get("next")
+        links = payload.get("links")
+        pagination = payload.get("pagination") or payload.get("meta")
+
+        if not next_value and isinstance(links, dict):
+            next_value = links.get("next")
+        if not next_value and isinstance(pagination, dict):
+            next_value = pagination.get("next") or pagination.get("next_page_url")
+
+        if isinstance(next_value, dict):
+            next_value = next_value.get("url") or next_value.get("href")
+        if next_value is True and isinstance(pagination, dict):
+            next_value = pagination.get("next_url")
+
+        next_url = str(next_value or "").strip()
+        if not next_url:
+            return ""
+        return urljoin(current_url, next_url)
+
+    def _normalize_next_page_url(self, next_url: str, base_url: str) -> str:
+        parsed_next = urlparse(next_url)
+        parsed_base = urlparse(base_url)
+        if not parsed_next.netloc or parsed_next.netloc == parsed_base.netloc:
+            return next_url
+
+        base_path = parsed_base.path.rstrip("/")
+        if parsed_next.path == base_path or parsed_next.path.startswith(f"{base_path}/"):
+            suffix = parsed_next.path[len(base_path):]
+            normalized_url = f"{base_url}{suffix}"
+            if parsed_next.query:
+                normalized_url = f"{normalized_url}?{parsed_next.query}"
+            return normalized_url
+
+        return next_url
+
     def _should_send_proxy_token(self, base_url: str) -> bool:
         base_hostname = (urlparse(base_url).hostname or "").lower()
         upstream_hostname = (
@@ -278,10 +361,7 @@ class CarImagesApiClient:
         if cached is not None:
             return cached
 
-        payload = self._request_json("/makes")
-        makes = payload.get("data") or []
-        if not isinstance(makes, list):
-            raise CarImagesApiError("Car images API returned invalid makes data.")
+        makes = self._request_json_pages("/makes")
         return _cache_set("makes", None, makes, self.cache_ttl_seconds)
 
     def list_models(self, make_slug: str) -> list[dict[str, Any]]:
@@ -291,12 +371,7 @@ class CarImagesApiClient:
         if cached is not None:
             return cached
 
-        payload = self._request_json(f"/makes/{quote(normalized_make_slug)}/models")
-        models = payload.get("data") or []
-        if not isinstance(models, list):
-            raise CarImagesApiError(
-                f"Car images API returned invalid models data for make {make_slug}."
-            )
+        models = self._request_json_pages(f"/makes/{quote(normalized_make_slug)}/models")
         return _cache_set("models", cache_key, models, self.cache_ttl_seconds)
 
     def get_model_details(self, make_slug: str, model_slug: str) -> dict[str, Any]:

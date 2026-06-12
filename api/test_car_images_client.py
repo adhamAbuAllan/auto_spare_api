@@ -104,3 +104,105 @@ class CarImagesApiClientTests(SimpleTestCase):
         self.assertIn("https://bad.example/api/v1/makes", message)
         self.assertIn("https://also-bad.example/api/v1/makes", message)
         self.assertIn("https://carimagesapi.com/api/v1/makes", message)
+
+    @override_settings(
+        CAR_IMAGES_API_BASE_URL="https://proxy.example/api/v1",
+        CAR_IMAGES_API_FALLBACK_BASE_URLS=(),
+        CAR_IMAGES_API_PROXY_TOKEN="secret-token",
+    )
+    @patch("api.car_catalog_sync.urlopen")
+    def test_list_makes_collects_paginated_results(self, urlopen):
+        urlopen.side_effect = [
+            FakeResponse(
+                {
+                    "data": [{"slug": "bmw", "name": "BMW"}],
+                    "links": {"next": "?page=2"},
+                }
+            ),
+            FakeResponse({"data": [{"slug": "toyota", "name": "Toyota"}]}),
+        ]
+
+        makes = CarImagesApiClient().list_makes()
+
+        self.assertEqual(
+            makes,
+            [
+                {"slug": "bmw", "name": "BMW"},
+                {"slug": "toyota", "name": "Toyota"},
+            ],
+        )
+        self.assertEqual(
+            [call.args[0].full_url for call in urlopen.call_args_list],
+            [
+                "https://proxy.example/api/v1/makes",
+                "https://proxy.example/api/v1/makes?page=2",
+            ],
+        )
+
+    @override_settings(
+        CAR_IMAGES_API_BASE_URL="https://proxy.example/api/v1",
+        CAR_IMAGES_API_FALLBACK_BASE_URLS=(),
+    )
+    @patch("api.car_catalog_sync.urlopen")
+    def test_list_models_collects_paginated_results(self, urlopen):
+        urlopen.side_effect = [
+            FakeResponse(
+                {
+                    "data": [{"slug": "camry", "name": "Camry"}],
+                    "pagination": {"next": "/api/v1/makes/toyota/models?page=2"},
+                }
+            ),
+            FakeResponse({"data": [{"slug": "corolla", "name": "Corolla"}]}),
+        ]
+
+        models = CarImagesApiClient().list_models("toyota")
+
+        self.assertEqual(
+            models,
+            [
+                {"slug": "camry", "name": "Camry"},
+                {"slug": "corolla", "name": "Corolla"},
+            ],
+        )
+        self.assertEqual(
+            [call.args[0].full_url for call in urlopen.call_args_list],
+            [
+                "https://proxy.example/api/v1/makes/toyota/models",
+                "https://proxy.example/api/v1/makes/toyota/models?page=2",
+            ],
+        )
+
+    @override_settings(
+        CAR_IMAGES_API_BASE_URL="https://proxy.example/api/v1",
+        CAR_IMAGES_API_FALLBACK_BASE_URLS=(),
+    )
+    @patch("api.car_catalog_sync.urlopen")
+    def test_absolute_upstream_next_url_stays_on_configured_base_url(self, urlopen):
+        urlopen.side_effect = [
+            FakeResponse(
+                {
+                    "data": [{"slug": "bmw", "name": "BMW"}],
+                    "links": {
+                        "next": "https://carimagesapi.com/api/v1/makes?page=2",
+                    },
+                }
+            ),
+            FakeResponse({"data": [{"slug": "toyota", "name": "Toyota"}]}),
+        ]
+
+        makes = CarImagesApiClient().list_makes()
+
+        self.assertEqual(
+            makes,
+            [
+                {"slug": "bmw", "name": "BMW"},
+                {"slug": "toyota", "name": "Toyota"},
+            ],
+        )
+        self.assertEqual(
+            [call.args[0].full_url for call in urlopen.call_args_list],
+            [
+                "https://proxy.example/api/v1/makes",
+                "https://proxy.example/api/v1/makes?page=2",
+            ],
+        )

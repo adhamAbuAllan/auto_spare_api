@@ -533,6 +533,36 @@ class CarCatalogApiTests(ApiTestCase):
             "Brand Beta Model Two",
         )
 
+    @override_settings(CAR_IMAGES_API_KEY="", CAR_IMAGES_API_SECRET="")
+    def test_car_catalog_returns_unpaginated_active_models(self):
+        alpha_make = CarMake.objects.get(name="Brand Alpha")
+        alpha_model = CarModel.objects.get(make=alpha_make, name="Model One")
+        alpha_model.image_url = "https://images.example/brand-alpha-model-one.webp"
+        alpha_model.save(update_fields=["image_url"])
+        self.create_car_model(
+            make_name="Brand Alpha",
+            model_name="Inactive Model",
+            is_active=False,
+        )
+        self.client.force_authenticate(user=None)
+
+        response = self.client.get("/api/car-catalog/")
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIsInstance(payload, list)
+        makes_by_name = {item["name"]: item for item in payload}
+        self.assertIn("Brand Alpha", makes_by_name)
+        alpha_models = {
+            item["name"]: item for item in makes_by_name["Brand Alpha"]["models"]
+        }
+        self.assertIn("Model One", alpha_models)
+        self.assertNotIn("Inactive Model", alpha_models)
+        self.assertEqual(
+            alpha_models["Model One"]["image_url"],
+            "https://images.example/brand-alpha-model-one.webp",
+        )
+
     def test_search_car_models_filters_by_query_and_make(self):
         alpha_make = CarMake.objects.get(name="Brand Alpha")
         self.create_car_model(make_name="Brand Alpha", model_name="RS Seven")
