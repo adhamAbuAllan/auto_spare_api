@@ -104,7 +104,7 @@ class HomePageTests(ApiTestCase):
         response = self.client.get("/")
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, "Auto Spare")
+        self.assertContains(response, "MTA Auto Spare")
         self.assertContains(response, 'data-lang="he"')
         self.assertContains(response, 'data-lang="ar"')
 

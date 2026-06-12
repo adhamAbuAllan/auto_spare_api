@@ -1,12 +1,12 @@
 const translations = {
     en: {
-        metaTitle: "Auto Spare",
+        metaTitle: "MTA Auto Spare",
         metaDescription:
-            "Auto Spare connects drivers and suppliers for fast car-part requests, offers, and chat.",
-        kicker: "Auto spare marketplace",
-        title: "Auto Spare",
+            "MTA Auto Spare connects drivers and suppliers for fast car-part requests, offers, and chat.",
+        kicker: "MTA auto spare marketplace",
+        title: "MTA Auto Spare",
         heroCopy:
-            "Find the right car parts faster. Auto Spare connects drivers, workshops, and suppliers through clear requests, photos, offers, and real-time chat.",
+            "Find the right car parts faster. MTA Auto Spare connects drivers, workshops, and suppliers through clear requests, photos, offers, and real-time chat.",
         apiButton: "Open API",
         healthButton: "Health check",
         introKicker: "Built for daily spare-part work",
@@ -30,16 +30,16 @@ const translations = {
         stepThreeTitle: "Continue in chat",
         stepThreeCopy:
             "Both sides can discuss fit, price, and delivery in real time.",
-        footer: "Auto Spare backend is online and ready for marketplace traffic.",
+        footer: "MTA Auto Spare backend is online and ready for marketplace traffic.",
     },
     he: {
-        metaTitle: "Auto Spare",
+        metaTitle: "MTA Auto Spare",
         metaDescription:
-            "Auto Spare מחברת בין נהגים וספקים לבקשות חלקי חילוף, הצעות וצ'אט מהיר.",
+            "MTA Auto Spare מחברת בין נהגים וספקים לבקשות חלקי חילוף, הצעות וצ'אט מהיר.",
         kicker: "זירת חלקי חילוף לרכב",
-        title: "Auto Spare",
+        title: "MTA Auto Spare",
         heroCopy:
-            "מצאו את החלק הנכון מהר יותר. Auto Spare מחברת נהגים, מוסכים וספקים באמצעות בקשות ברורות, תמונות, הצעות וצ'אט בזמן אמת.",
+            "מצאו את החלק הנכון מהר יותר. MTA Auto Spare מחברת נהגים, מוסכים וספקים באמצעות בקשות ברורות, תמונות, הצעות וצ'אט בזמן אמת.",
         apiButton: "פתח API",
         healthButton: "בדיקת מערכת",
         introKicker: "נבנה לעבודה יומיומית עם חלקים",
@@ -63,16 +63,16 @@ const translations = {
         stepThreeTitle: "ממשיכים בצ'אט",
         stepThreeCopy:
             "שני הצדדים יכולים לדבר על התאמה, מחיר ומשלוח בזמן אמת.",
-        footer: "ה-backend של Auto Spare פעיל ומוכן לתנועת marketplace.",
+        footer: "ה-backend של MTA Auto Spare פעיל ומוכן לתנועת marketplace.",
     },
     ar: {
-        metaTitle: "Auto Spare",
+        metaTitle: "MTA Auto Spare",
         metaDescription:
-            "يربط Auto Spare السائقين والموردين لطلبات قطع الغيار والعروض والمحادثة السريعة.",
+            "يربط MTA Auto Spare السائقين والموردين لطلبات قطع الغيار والعروض والمحادثة السريعة.",
         kicker: "سوق لقطع غيار السيارات",
-        title: "Auto Spare",
+        title: "MTA Auto Spare",
         heroCopy:
-            "اعثر على قطعة الغيار المناسبة بسرعة أكبر. يربط Auto Spare السائقين والورش والموردين عبر طلبات واضحة وصور وعروض ومحادثة فورية.",
+            "اعثر على قطعة الغيار المناسبة بسرعة أكبر. يربط MTA Auto Spare السائقين والورش والموردين عبر طلبات واضحة وصور وعروض ومحادثة فورية.",
         apiButton: "افتح API",
         healthButton: "فحص الحالة",
         introKicker: "مصمم للعمل اليومي في قطع الغيار",
@@ -96,7 +96,7 @@ const translations = {
         stepThreeTitle: "المتابعة في المحادثة",
         stepThreeCopy:
             "يمكن للطرفين مناقشة التوافق والسعر والتسليم في الوقت الفعلي.",
-        footer: "النظام الخلفي لـ Auto Spare يعمل وجاهز لحركة السوق.",
+        footer: "النظام الخلفي لـ MTA Auto Spare يعمل وجاهز لحركة السوق.",
     },
 };
 
