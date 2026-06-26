@@ -1,3 +1,4 @@
+import json
 import logging
 from pathlib import Path
 
@@ -51,6 +52,23 @@ def get_firebase_app():
             logger.info("Firebase Admin SDK is not installed.")
             _MISSING_SDK_LOGGED = True
         return None
+
+    # Try raw JSON setting first
+    raw_json = str(getattr(settings, "FCM_SERVICE_ACCOUNT_JSON", "") or "").strip()
+    if raw_json:
+        try:
+            _FIREBASE_APP = firebase_admin.get_app()
+        except ValueError:
+            try:
+                cert_dict = json.loads(raw_json)
+                _FIREBASE_APP = firebase_admin.initialize_app(
+                    credentials.Certificate(cert_dict)
+                )
+                logger.info("Firebase Admin SDK initialized using raw JSON string.")
+            except Exception as exc:
+                logger.error("Failed to initialize Firebase using FCM_SERVICE_ACCOUNT_JSON: %s", exc)
+                return None
+        return _FIREBASE_APP
 
     service_account_path = _resolve_service_account_path()
     if service_account_path is None:
