@@ -249,3 +249,19 @@ class CarImagesApiClientTests(SimpleTestCase):
             request.headers.get("Authorization"),
             "Bearer expected-bearer-key"
         )
+
+    @override_settings(
+        CAR_IMAGES_API_BASE_URL="https://my-custom-proxy.ngrok-free.app/api/v1",
+    )
+    def test_build_signed_model_image_url_with_custom_base(self):
+        from .models import CarMake, CarModel
+        from .car_catalog_sync import build_signed_model_image_url
+
+        make = CarMake(name="Audi", slug="audi")
+        model = CarModel(make=make, name="A3", slug="a3", image_url="https://placehold.co/123")
+
+        url = build_signed_model_image_url(model)
+        self.assertEqual(
+            url,
+            "https://my-custom-proxy.ngrok-free.app/api/v1/image?make=Audi&model=A3"
+        )

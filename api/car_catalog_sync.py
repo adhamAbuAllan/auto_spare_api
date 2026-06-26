@@ -150,6 +150,16 @@ def select_preferred_model_image_url(model_payload: dict[str, Any]) -> str:
 
 
 def build_signed_model_image_url(car_model: CarModel) -> str:
+    base_url = str(getattr(settings, "CAR_IMAGES_API_BASE_URL", "") or "").strip().rstrip("/")
+    is_custom_base = base_url and "carimagesapi.com" not in base_url.lower()
+
+    if is_custom_base:
+        params = {
+            "make": car_model.make.name,
+            "model": car_model.name,
+        }
+        return f"{base_url}/image?{urlencode(params, quote_via=quote)}"
+
     api_key = str(getattr(settings, "CAR_IMAGES_API_KEY", "") or "").strip()
     api_secret = str(getattr(settings, "CAR_IMAGES_API_SECRET", "") or "").strip()
     if not api_key or not api_secret:

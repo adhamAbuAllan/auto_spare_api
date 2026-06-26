@@ -15,8 +15,18 @@ def _proxy_error(message: str, status: int) -> JsonResponse:
     return JsonResponse({"detail": message}, status=status)
 
 
-def _serve_mock_proxy_response(path: str) -> HttpResponse:
+def _serve_mock_proxy_response(request, path: str) -> HttpResponse:
     parts = [part.strip().lower() for part in path.split("/") if part.strip()]
+
+    # Handle image endpoint: /image?make=Toyota&model=Camry
+    if len(parts) == 1 and parts[0] == "image":
+        make = request.GET.get("make", "Car")
+        model = request.GET.get("model", "Model")
+        from urllib.parse import quote_plus
+        label = quote_plus(f"{make} {model}")
+        placeholder_url = f"https://placehold.co/600x400/png?text={label}"
+        from django.http import HttpResponseRedirect
+        return HttpResponseRedirect(placeholder_url)
 
     # 1. /makes
     if len(parts) == 1 and parts[0] == "makes":
@@ -87,7 +97,7 @@ def car_images_api_proxy(request, path: str) -> HttpResponse:
 
     is_mock_mode = getattr(settings, "CAR_IMAGES_API_MOCK", not getattr(settings, "CAR_IMAGES_API_KEY", "").strip())
     if is_mock_mode:
-        return _serve_mock_proxy_response(path)
+        return _serve_mock_proxy_response(request, path)
 
     normalized_path = "/".join(
         quote(part.strip(), safe="")
@@ -102,7 +112,12 @@ def car_images_api_proxy(request, path: str) -> HttpResponse:
         "CAR_IMAGES_API_PROXY_TARGET_BASE_URL",
         "https://carimagesapi.com/api/v1",
     ).rstrip("/")
-    target_url = f"{target_base_url}/{normalized_path}"
+    if normalized_path == "image":
+        from urllib.parse import urlparse
+        parsed = urlparse(target_base_url)
+        target_url = f"{parsed.scheme}://{parsed.netloc}/image"
+    else:
+        target_url = f"{target_base_url}/{normalized_path}"
     if request.META.get("QUERY_STRING"):
         target_url = f"{target_url}?{request.META['QUERY_STRING']}"
 
