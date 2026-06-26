@@ -15,6 +15,7 @@ from django.conf import settings
 from django.db import transaction
 
 from .models import CarMake, CarModel
+from .mock_catalog_data import MOCK_CAR_CATALOG, MOCK_CAR_IMAGE_URL
 
 logger = logging.getLogger(__name__)
 DEFAULT_CAR_IMAGES_API_BASE_URL = "https://carimagesapi.com/api/v1"
@@ -203,6 +204,10 @@ class CarImagesApiClient:
             getattr(settings, "CAR_IMAGES_MEMORY_CACHE_TTL_SECONDS", 12 * 60 * 60)
         )
 
+    @property
+    def is_mock_mode(self) -> bool:
+        return getattr(settings, "CAR_IMAGES_API_MOCK", not getattr(settings, "CAR_IMAGES_API_KEY", "").strip())
+
     def _request_json(self, path: str) -> dict[str, Any]:
         errors = []
         for index, base_url in enumerate(self.base_urls):
@@ -278,6 +283,10 @@ class CarImagesApiClient:
         proxy_token = str(getattr(settings, "CAR_IMAGES_API_PROXY_TOKEN", "")).strip()
         if proxy_token and self._should_send_proxy_token(base_url):
             headers["X-Car-Images-Proxy-Token"] = proxy_token
+
+        api_key = str(getattr(settings, "CAR_IMAGES_API_KEY", "") or "").strip()
+        if api_key and not self._should_send_proxy_token(base_url):
+            headers["Authorization"] = f"Bearer {api_key}"
 
         request = Request(
             url,
@@ -361,7 +370,11 @@ class CarImagesApiClient:
         if cached is not None:
             return cached
 
-        makes = self._request_json_pages("/makes")
+        if self.is_mock_mode:
+            from django.utils.text import slugify
+            makes = [{"name": name, "slug": slugify(name)} for name in MOCK_CAR_CATALOG.keys()]
+        else:
+            makes = self._request_json_pages("/makes")
         return _cache_set("makes", None, makes, self.cache_ttl_seconds)
 
     def list_models(self, make_slug: str) -> list[dict[str, Any]]:
@@ -371,7 +384,15 @@ class CarImagesApiClient:
         if cached is not None:
             return cached
 
-        models = self._request_json_pages(f"/makes/{quote(normalized_make_slug)}/models")
+        if self.is_mock_mode:
+            from django.utils.text import slugify
+            models = []
+            for make_name, model_names in MOCK_CAR_CATALOG.items():
+                if slugify(make_name) == normalized_make_slug:
+                    models = [{"name": name, "slug": slugify(name)} for name in model_names]
+                    break
+        else:
+            models = self._request_json_pages(f"/makes/{quote(normalized_make_slug)}/models")
         return _cache_set("models", cache_key, models, self.cache_ttl_seconds)
 
     def get_model_details(self, make_slug: str, model_slug: str) -> dict[str, Any]:
@@ -382,9 +403,42 @@ class CarImagesApiClient:
         if cached is not None:
             return cached
 
-        payload = self._request_json(
-            f"/makes/{quote(normalized_make_slug)}/models/{quote(normalized_model_slug)}"
-        )
+        if self.is_mock_mode:
+            from django.utils.text import slugify
+            make_name_matched = None
+            model_name_matched = None
+            for make_name, model_names in MOCK_CAR_CATALOG.items():
+                if slugify(make_name) == normalized_make_slug:
+                    make_name_matched = make_name
+                    for m in model_names:
+                        if slugify(m) == normalized_model_slug:
+                            model_name_matched = m
+                            break
+                if make_name_matched:
+                    break
+
+            if not make_name_matched or not model_name_matched:
+                raise CarImagesApiError(f"Model not found: {make_slug}/{model_slug}")
+
+            payload = {
+                "generations": [
+                    {
+                        "year_start": 2020,
+                        "year_end": 2024,
+                        "images": {
+                            "sizes": {
+                                "800": {
+                                    "webp": MOCK_CAR_IMAGE_URL
+                                }
+                            }
+                        }
+                    }
+                ]
+            }
+        else:
+            payload = self._request_json(
+                f"/makes/{quote(normalized_make_slug)}/models/{quote(normalized_model_slug)}"
+            )
         return _cache_set("model_details", cache_key, payload, self.cache_ttl_seconds)
 
 

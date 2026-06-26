@@ -30,6 +30,10 @@ def http_error(url, status=403, body=b'{"detail":"blocked"}'):
     return HTTPError(url, status, "Forbidden", {}, io.BytesIO(body))
 
 
+@override_settings(
+    CAR_IMAGES_API_MOCK=False,
+    CAR_IMAGES_API_KEY="test-api-key",
+)
 class CarImagesApiClientTests(SimpleTestCase):
     def setUp(self):
         car_catalog_sync._MEMORY_CACHE["makes"] = None
@@ -205,4 +209,43 @@ class CarImagesApiClientTests(SimpleTestCase):
                 "https://proxy.example/api/v1/makes",
                 "https://proxy.example/api/v1/makes?page=2",
             ],
+        )
+
+    @override_settings(
+        CAR_IMAGES_API_MOCK=True,
+    )
+    def test_mock_mode_returns_local_data_without_network(self):
+        client = CarImagesApiClient()
+        self.assertTrue(client.is_mock_mode)
+
+        makes = client.list_makes()
+        self.assertIn({"name": "Toyota", "slug": "toyota"}, makes)
+
+        models = client.list_models("toyota")
+        self.assertIn({"name": "Camry", "slug": "camry"}, models)
+
+        details = client.get_model_details("toyota", "camry")
+        self.assertIn("generations", details)
+        self.assertEqual(
+            details["generations"][0]["images"]["sizes"]["800"]["webp"],
+            "https://images.unsplash.com/photo-1503376780353-7e6692767b70?auto=format&fit=crop&q=80&w=800"
+        )
+
+    @override_settings(
+        CAR_IMAGES_API_MOCK=False,
+        CAR_IMAGES_API_KEY="expected-bearer-key",
+        CAR_IMAGES_API_BASE_URL="https://carimagesapi.com/api/v1",
+        CAR_IMAGES_API_FALLBACK_BASE_URLS=(),
+    )
+    @patch("api.car_catalog_sync.urlopen")
+    def test_sends_authorization_header_when_api_key_set(self, urlopen):
+        urlopen.return_value = FakeResponse({"data": []})
+
+        CarImagesApiClient().list_makes()
+
+        self.assertEqual(urlopen.call_count, 1)
+        request = urlopen.call_args[0][0]
+        self.assertEqual(
+            request.headers.get("Authorization"),
+            "Bearer expected-bearer-key"
         )
