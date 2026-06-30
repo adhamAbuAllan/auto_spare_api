@@ -459,6 +459,70 @@ class UsersApiTests(ApiTestCase):
         self.assertEqual(payload["status_code"], 401)
         self.assertEqual(payload["code"], "invalid_password")
 
+    @patch("api.serializers.verify_firebase_id_token")
+    def test_password_reset_updates_password_after_firebase_phone_verification(
+        self, verify_token
+    ):
+        user = self.create_user(phone="+966555000115", password="OldPass123!")
+        verify_token.return_value = {
+            "uid": "firebase-reset-uid",
+            "phone_number": user.phone,
+        }
+
+        response = self.client.post(
+            "/api/password-reset/",
+            data={
+                "firebase_id_token": "firebase-token",
+                "phone": user.phone,
+                "password": "NewPass123!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        user.refresh_from_db()
+        self.assertTrue(user.check_password("NewPass123!"))
+        self.assertIsNotNone(user.phone_verified_at)
+
+    @patch("api.serializers.verify_firebase_id_token")
+    def test_password_reset_rejects_firebase_phone_mismatch(self, verify_token):
+        user = self.create_user(phone="+966555000116")
+        verify_token.return_value = {
+            "uid": "firebase-reset-uid",
+            "phone_number": "+966555000117",
+        }
+
+        response = self.client.post(
+            "/api/password-reset/",
+            data={
+                "firebase_id_token": "firebase-token",
+                "phone": user.phone,
+                "password": "NewPass123!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["message"], "Firebase verified phone number does not match.")
+        self.assertIn("phone", payload)
+
+    def test_password_reset_rejects_unknown_phone(self):
+        response = self.client.post(
+            "/api/password-reset/",
+            data={
+                "firebase_id_token": "firebase-token",
+                "phone": "+966555000118",
+                "password": "NewPass123!",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        payload = response.json()
+        self.assertEqual(payload["message"], "No user found with this phone number.")
+        self.assertIn("phone", payload)
+
     def test_protected_endpoints_return_clear_unauthorized_message(self):
         response = self.client.get("/api/me/")
 
@@ -2229,3 +2293,61 @@ class UserModerationApiTests(ApiTestCase):
 
         self.assertEqual(login_response.status_code, 200)
         self.assertIn("access", login_response.json())
+
+    def test_admin_can_delete_user_by_phone(self):
+        target_user = self.create_user(
+            phone="+966555000201",
+            username="delete-target",
+            email="delete-target@example.com",
+        )
+
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/users/delete-by-phone/",
+            data={"phone": target_user.phone},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["deleted_user_id"], target_user.id)
+        self.assertEqual(response.json()["phone"], target_user.phone)
+        self.assertFalse(ApiUser.objects.filter(pk=target_user.pk).exists())
+
+    def test_non_admin_cannot_delete_user_by_phone(self):
+        target_user = self.create_user(
+            phone="+966555000202",
+            username="delete-target",
+            email="delete-target@example.com",
+        )
+
+        self.client.force_authenticate(user=self.reporter)
+        response = self.client.post(
+            "/api/users/delete-by-phone/",
+            data={"phone": target_user.phone},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(ApiUser.objects.filter(pk=target_user.pk).exists())
+
+    def test_admin_delete_by_phone_rejects_unknown_phone(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/users/delete-by-phone/",
+            data={"phone": "+966555000203"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("phone", response.json())
+
+    def test_admin_delete_by_phone_rejects_own_account(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            "/api/users/delete-by-phone/",
+            data={"phone": self.admin.phone},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertTrue(ApiUser.objects.filter(pk=self.admin.pk).exists())

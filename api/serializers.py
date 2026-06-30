@@ -266,6 +266,62 @@ class FirebaseRegistrationSerializer(serializers.Serializer):
         return user
 
 
+class FirebasePasswordResetSerializer(serializers.Serializer):
+    firebase_id_token = serializers.CharField(write_only=True)
+    phone = serializers.CharField()
+    password = serializers.CharField(write_only=True)
+
+    def validate_phone(self, value):
+        return normalize_phone_number(value)
+
+    def validate_password(self, value):
+        validate_password(value)
+        return value
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        phone = attrs["phone"]
+
+        try:
+            user = ApiUser.objects.get(phone=phone)
+        except ApiUser.DoesNotExist as exc:
+            raise serializers.ValidationError(
+                {"phone": "No user found with this phone number."}
+            ) from exc
+
+        try:
+            decoded_token = verify_firebase_id_token(attrs["firebase_id_token"])
+        except FirebaseAuthUnavailable as exc:
+            raise serializers.ValidationError(
+                {"firebase_id_token": "Firebase authentication is not configured."}
+            ) from exc
+        except FirebaseTokenVerificationError as exc:
+            raise serializers.ValidationError(
+                {"firebase_id_token": "Firebase ID token is invalid."}
+            ) from exc
+
+        try:
+            token_phone = normalize_phone_number(decoded_token.get("phone_number"))
+        except serializers.ValidationError as exc:
+            raise serializers.ValidationError(
+                {"firebase_id_token": "Firebase ID token is missing a verified phone number."}
+            ) from exc
+        if token_phone != phone:
+            raise serializers.ValidationError(
+                {"phone": "Firebase verified phone number does not match."}
+            )
+
+        attrs["user"] = user
+        return attrs
+
+    def save(self, **kwargs):
+        user = self.validated_data["user"]
+        user.set_password(self.validated_data["password"])
+        user.phone_verified_at = user.phone_verified_at or timezone.now()
+        user.save(update_fields=["password", "phone_verified_at"])
+        return user
+
+
 class SparePartSerializer(serializers.ModelSerializer):
     class Meta:
         model = SparePart

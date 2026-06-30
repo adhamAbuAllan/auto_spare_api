@@ -54,6 +54,7 @@ from .serializers import (
     ConversationListSerializer,
     ConversationParticipantSerializer,
     ConversationSerializer,
+    FirebasePasswordResetSerializer,
     FirebaseRegistrationSerializer,
     MeSerializer,
     MobileDeviceSerializer,
@@ -69,6 +70,7 @@ from .serializers import (
     UserReportAdminUpdateSerializer,
     UserReportCreateSerializer,
     UserReportSerializer,
+    normalize_phone_number,
 )
 from .car_catalog_sync import CarCatalogSyncService, CarImagesApiError
 from .translation import (
@@ -94,6 +96,8 @@ from chat.push_notifications import (
     send_request_created_push_notifications,
     send_test_request_notification,
 )
+
+from .account_deletion import delete_account
 
 
 logger = logging.getLogger(__name__)
@@ -303,6 +307,29 @@ class ApiUserViewSet(
         )
         return Response(ApiUserSerializer(user, context=self.get_serializer_context()).data)
 
+    @action(detail=False, methods=["delete", "post"], url_path="delete-by-phone")
+    def delete_by_phone(self, request):
+        _ensure_admin_user(request.user)
+
+        phone = normalize_phone_number(request.data.get("phone"))
+        try:
+            user = ApiUser.objects.get(phone=phone)
+        except ApiUser.DoesNotExist as exc:
+            raise ValidationError({"phone": "No user found with this phone number."}) from exc
+
+        if user.pk == request.user.pk:
+            raise ValidationError({"detail": "You cannot delete your own account from this endpoint."})
+
+        deleted_user_id = user.id
+        delete_account(user)
+        return Response(
+            {
+                "detail": "Account deleted successfully.",
+                "deleted_user_id": deleted_user_id,
+                "phone": phone,
+            }
+        )
+
 
 class FirebaseRegistrationView(APIView):
     permission_classes = [AllowAny]
@@ -322,6 +349,17 @@ class FirebaseRegistrationView(APIView):
             },
             status=status.HTTP_201_CREATED,
         )
+
+
+class FirebasePasswordResetView(APIView):
+    permission_classes = [AllowAny]
+    parser_classes = [JSONParser, FormParser]
+
+    def post(self, request):
+        serializer = FirebasePasswordResetSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response({"detail": "Password updated successfully."})
 
 
 class SparePartViewSet(
@@ -1476,41 +1514,5 @@ class MeView(RetrieveUpdateDestroyAPIView):
 
     def destroy(self, request, *args, **kwargs):
         user = self.get_object()
-        files_to_delete = self._collect_owned_file_references(user)
-
-        with transaction.atomic():
-            user.delete()
-
-        self._delete_files(files_to_delete)
-        logger.info("Deleted account for user %s.", user.id)
+        delete_account(user)
         return Response(status=status.HTTP_204_NO_CONTENT)
-
-    def _collect_owned_file_references(self, user):
-        files = []
-        seen_names = set()
-
-        def remember(file_field):
-            if not file_field:
-                return
-            name = str(getattr(file_field, "name", "") or "").strip()
-            if not name or name in seen_names:
-                return
-            seen_names.add(name)
-            files.append((file_field.storage, name))
-
-        remember(user.avatar)
-
-        for image in PartImage.objects.filter(part_request__requester=user).iterator():
-            remember(image.image)
-
-        for attachment in MessageAttachment.objects.filter(message__sender=user).iterator():
-            remember(attachment.file)
-
-        return files
-
-    def _delete_files(self, files):
-        for storage, name in files:
-            try:
-                storage.delete(name)
-            except Exception as exc:  # pragma: no cover - cleanup best effort
-                logger.warning("Unable to delete uploaded file %s during account removal: %s", name, exc)
