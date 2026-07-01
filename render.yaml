@@ -41,6 +41,8 @@ services:
           property: connectionString
       - key: CHANNEL_LAYER_BACKEND
         value: redis
+      - key: CHAT_ALLOWED_MEDIA_TYPES
+        value: text/plain,image/jpeg,image/png,image/webp,image/gif,application/pdf,video/mp4,audio/mpeg,audio/mp4,audio/aac,audio/x-m4a,audio/mp4a-latm,audio/ogg,audio/wav,audio/x-wav,audio/webm
       - key: REDIS_URL
         fromService:
           type: redis
