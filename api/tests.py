@@ -764,6 +764,7 @@ class PartRequestApiTests(ApiTestCase):
         self.assertEqual(payload["images"], [])
 
     def test_create_part_request_with_images_returns_uploaded_images(self):
+        car_model = self.create_car_model()
         image_bytes = (Path(__file__).resolve().parent.parent / "fixtures" / "sample_part.jpg").read_bytes()
         image = SimpleUploadedFile(
             "sample_part.jpg",
@@ -778,6 +779,7 @@ class PartRequestApiTests(ApiTestCase):
                 "title": "Need headlight",
                 "description": "Front right headlight",
                 "status": str(self.status.id),
+                "car_model": str(car_model.id),
                 "city": "",
                 "images": [image],
             },
@@ -787,6 +789,7 @@ class PartRequestApiTests(ApiTestCase):
         self.assertEqual(response.status_code, 201)
         payload = response.json()
         self.assertEqual(len(payload["images"]), 1)
+        self.assertTrue(payload["images"][0]["image"].startswith("http://testserver/media/"))
         self.assertIn("sample_part", payload["images"][0]["image"])
 
         request = PartRequest.objects.get(pk=payload["id"])

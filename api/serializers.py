@@ -655,10 +655,19 @@ class PartRequestSerializer(serializers.ModelSerializer):
 
 
 class PartImageSerializer(serializers.ModelSerializer):
+    image = serializers.SerializerMethodField()
+
     class Meta:
         model = PartImage
         fields = ["id", "part_request", "image", "created_at"]
         read_only_fields = ["id", "created_at"]
+
+    def get_image(self, obj):
+        if not obj.image:
+            return None
+        url = obj.image.url
+        request = self.context.get("request")
+        return request.build_absolute_uri(url) if request else url
 
 
 class ConversationSerializer(serializers.ModelSerializer):
