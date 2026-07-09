@@ -46,7 +46,7 @@ def _get_firebase_app():
     return get_firebase_app()
 
 
-def _group_active_android_devices(*, user_ids):
+def _group_active_push_devices(*, user_ids):
     device_map = defaultdict(list)
     if not user_ids:
         return device_map
@@ -55,7 +55,7 @@ def _group_active_android_devices(*, user_ids):
         MobileDevice.objects.select_related("user")
         .filter(
             user_id__in=set(user_ids),
-            platform=MobileDevice.PLATFORM_ANDROID,
+            platform__in=[MobileDevice.PLATFORM_ANDROID, MobileDevice.PLATFORM_IOS],
             is_active=True,
             user__chat_push_enabled=True,
         )
@@ -77,13 +77,30 @@ def _stringify_data(data):
     return payload
 
 
+def _build_apns_config(*, title, body):
+    if messaging is None:
+        return None
+    return messaging.APNSConfig(
+        headers={
+            "apns-priority": "10",
+        },
+        payload=messaging.APNSPayload(
+            aps=messaging.Aps(
+                alert=messaging.ApsAlert(title=title, body=body),
+                sound="default",
+            ),
+        ),
+    )
+
+
 def _send_fcm_message(*, token, title, body, data, channel_id, app):
+    android_config = messaging.AndroidConfig(priority="high")
+    apns_config = _build_apns_config(title=title, body=body)
     message = messaging.Message(
         token=token,
         data=_stringify_data(data),
-        android=messaging.AndroidConfig(
-            priority="high",
-        ),
+        android=android_config,
+        apns=apns_config,
     )
     return messaging.send(message, app=app)
 
@@ -252,11 +269,11 @@ def send_chat_message_push_notifications(message_payload):
         .values_list("user_id", flat=True)
         .distinct()
     )
-    devices_by_user = _group_active_android_devices(user_ids=recipient_ids)
+    devices_by_user = _group_active_push_devices(user_ids=recipient_ids)
     if not devices_by_user:
         logger.info(
             "Skipping chat push notification for message %s in conversation %s "
-            "because recipients %s have no active Android devices registered.",
+            "because recipients %s have no active Android/iOS devices registered.",
             message_id,
             conversation_id,
             recipient_ids,
@@ -289,11 +306,11 @@ def send_chat_message_push_notifications(message_payload):
             }
             if _is_sent_dispatch_result(
                 _dispatch_notification(
-                device=device,
-                title=title,
-                body=body,
-                data=data,
-                channel_id=settings.FCM_ANDROID_MESSAGE_CHANNEL_ID,
+                    device=device,
+                    title=title,
+                    body=body,
+                    data=data,
+                    channel_id=settings.FCM_ANDROID_MESSAGE_CHANNEL_ID,
                 )
             ):
                 sent_count += 1
@@ -323,7 +340,7 @@ def send_request_created_push_notifications(part_request):
     devices_queryset = (
         MobileDevice.objects.select_related("user")
         .filter(
-            platform=MobileDevice.PLATFORM_ANDROID,
+            platform__in=[MobileDevice.PLATFORM_ANDROID, MobileDevice.PLATFORM_IOS],
             is_active=True,
             user__chat_push_enabled=True,
             user__role=ApiUser.ROLE_SUPPLIER,

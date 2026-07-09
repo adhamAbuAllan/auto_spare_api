@@ -87,6 +87,13 @@ class ChatPushNotificationTests(TestCase):
             push_token="preview-on-token",
             is_active=True,
         )
+        self.preview_enabled_ios_device = MobileDevice.objects.create(
+            user=self.preview_enabled_recipient,
+            device_id="preview-on-ios-1",
+            platform=MobileDevice.PLATFORM_IOS,
+            push_token="preview-on-ios-token",
+            is_active=True,
+        )
         self.preview_disabled_device = MobileDevice.objects.create(
             user=self.preview_disabled_recipient,
             device_id="preview-off-android-1",
@@ -182,13 +189,17 @@ class ChatPushNotificationTests(TestCase):
                 }
             )
 
-        self.assertEqual(send_count, 2)
-        self.assertEqual(dispatch_mock.call_count, 2)
+        self.assertEqual(send_count, 3)
+        self.assertEqual(dispatch_mock.call_count, 3)
         payloads_by_device = {
             call.kwargs["device"].device_id: call.kwargs for call in dispatch_mock.call_args_list
         }
         self.assertEqual(
             payloads_by_device["preview-on-android-1"]["body"],
+            "Fresh front bumper available in stock",
+        )
+        self.assertEqual(
+            payloads_by_device["preview-on-ios-1"]["body"],
             "Fresh front bumper available in stock",
         )
         self.assertEqual(
@@ -252,6 +263,8 @@ class ChatPushNotificationTests(TestCase):
     def test_inactive_devices_are_skipped(self):
         self.preview_enabled_device.is_active = False
         self.preview_enabled_device.save(update_fields=["is_active"])
+        self.preview_enabled_ios_device.is_active = False
+        self.preview_enabled_ios_device.save(update_fields=["is_active"])
         self.preview_disabled_device.is_active = False
         self.preview_disabled_device.save(update_fields=["is_active"])
 
@@ -281,8 +294,8 @@ class ChatPushNotificationTests(TestCase):
         ) as dispatch_mock:
             send_count = send_request_created_push_notifications(self.part_request)
 
-        self.assertEqual(send_count, 2)
-        self.assertEqual(dispatch_mock.call_count, 2)
+        self.assertEqual(send_count, 3)
+        self.assertEqual(dispatch_mock.call_count, 3)
         payloads_by_device = {
             call.kwargs["device"].device_id: call.kwargs for call in dispatch_mock.call_args_list
         }
@@ -296,6 +309,10 @@ class ChatPushNotificationTests(TestCase):
         )
         self.assertEqual(
             payloads_by_device["preview-on-android-1"]["body"],
+            "OEM preferred and ready for pickup",
+        )
+        self.assertEqual(
+            payloads_by_device["preview-on-ios-1"]["body"],
             "OEM preferred and ready for pickup",
         )
         self.assertEqual(
@@ -322,11 +339,14 @@ class ChatPushNotificationTests(TestCase):
         ) as dispatch_mock:
             send_count = send_request_created_push_notifications(self.part_request)
 
-        self.assertEqual(send_count, 1)
-        self.assertEqual(dispatch_mock.call_count, 1)
+        self.assertEqual(send_count, 2)
+        self.assertEqual(dispatch_mock.call_count, 2)
         self.assertEqual(
-            dispatch_mock.call_args.kwargs["device"].device_id,
-            "preview-on-android-1",
+            {
+                call.kwargs["device"].device_id
+                for call in dispatch_mock.call_args_list
+            },
+            {"preview-on-android-1", "preview-on-ios-1"},
         )
 
     def test_test_request_notification_returns_structured_result(self):
@@ -353,12 +373,28 @@ class ChatPushNotificationTests(TestCase):
         )
         dispatch_mock.assert_called_once()
 
-    def test_fcm_android_message_is_sent_as_data_only_high_priority(self):
+    def test_fcm_message_includes_high_priority_android_and_apns_alert(self):
         with (
             patch(
                 "chat.push_notifications.messaging.AndroidConfig",
                 side_effect=lambda **kwargs: kwargs,
             ) as android_config_mock,
+            patch(
+                "chat.push_notifications.messaging.ApsAlert",
+                side_effect=lambda **kwargs: {"aps_alert": kwargs},
+            ) as aps_alert_mock,
+            patch(
+                "chat.push_notifications.messaging.Aps",
+                side_effect=lambda **kwargs: {"aps": kwargs},
+            ) as aps_mock,
+            patch(
+                "chat.push_notifications.messaging.APNSPayload",
+                side_effect=lambda **kwargs: {"apns_payload": kwargs},
+            ) as apns_payload_mock,
+            patch(
+                "chat.push_notifications.messaging.APNSConfig",
+                side_effect=lambda **kwargs: kwargs,
+            ) as apns_config_mock,
             patch(
                 "chat.push_notifications.messaging.Message",
                 side_effect=lambda **kwargs: kwargs,
@@ -386,8 +422,21 @@ class ChatPushNotificationTests(TestCase):
         self.assertEqual(result, "message-id-1")
         android_config_mock.assert_called_once()
         self.assertEqual(android_config_mock.call_args.kwargs["priority"], "high")
+        aps_alert_mock.assert_called_once_with(
+            title="Seller User",
+            body="Sent you a new message.",
+        )
+        aps_mock.assert_called_once()
+        self.assertEqual(aps_mock.call_args.kwargs["sound"], "default")
+        apns_payload_mock.assert_called_once()
+        apns_config_mock.assert_called_once()
+        self.assertEqual(
+            apns_config_mock.call_args.kwargs["headers"]["apns-priority"],
+            "10",
+        )
         message_mock.assert_called_once()
         self.assertNotIn("notification", message_mock.call_args.kwargs)
+        self.assertIn("apns", message_mock.call_args.kwargs)
         self.assertEqual(
             message_mock.call_args.kwargs["data"],
             {
