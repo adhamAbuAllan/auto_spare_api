@@ -698,6 +698,43 @@ class PartRequestApiTests(ApiTestCase):
         self.assertEqual(payload["id"], part_request.id)
         self.assertEqual(payload["title"], "Need bumper")
 
+    def test_expired_part_request_is_hidden_from_list_and_detail(self):
+        part_request = PartRequest.objects.create(
+            requester=self.user,
+            title="Old bumper request",
+            description="This should no longer be visible",
+            status=self.status,
+            city="Riyadh",
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        list_response = self.client.get("/api/part-requests/")
+        detail_response = self.client.get(f"/api/part-requests/{part_request.id}/")
+
+        self.assertEqual(list_response.status_code, 200)
+        self.assertEqual(list_response.json()["count"], 0)
+        self.assertEqual(detail_response.status_code, 404)
+        self.assertTrue(PartRequest.objects.filter(pk=part_request.pk).exists())
+
+    def test_new_part_request_expires_in_48_hours(self):
+        before_creation = timezone.now()
+        part_request = PartRequest.objects.create(
+            requester=self.user,
+            title="New bumper request",
+            description="Still visible",
+            status=self.status,
+            city="Riyadh",
+        )
+
+        self.assertGreaterEqual(
+            part_request.expires_at,
+            before_creation + timedelta(hours=48),
+        )
+        self.assertLessEqual(
+            part_request.expires_at,
+            timezone.now() + timedelta(hours=48, seconds=1),
+        )
+
     def test_list_hides_granted_request_from_other_suppliers(self):
         owner = self.create_user(username="owner", email="owner@example.com")
         granted_supplier = self.create_user(

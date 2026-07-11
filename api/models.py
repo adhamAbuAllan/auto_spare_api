@@ -1,8 +1,17 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
+
+
+PART_REQUEST_LIFETIME = timedelta(hours=48)
+
+
+def default_part_request_expiry():
+    return timezone.now() + PART_REQUEST_LIFETIME
 
 
 class ApiUserManager(BaseUserManager):
@@ -211,7 +220,15 @@ class PartRequest(models.Model):
     )
     city = models.CharField(max_length=120, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField(
+        default=default_part_request_expiry,
+        db_index=True,
+    )
     updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def is_expired(self):
+        return self.expires_at <= timezone.now()
 
     def __str__(self):
         return self.title

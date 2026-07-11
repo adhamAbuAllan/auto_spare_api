@@ -460,6 +460,7 @@ class PartRequestViewSet(
     def get_queryset(self):
         qs = (
             PartRequest.objects.select_related("requester", "status", "car_model__make")
+            .filter(expires_at__gt=timezone.now())
             .annotate(
                 accepted_access_user_id=Subquery(
                     PartRequestAccess.objects.filter(
@@ -723,6 +724,7 @@ class PartRequestAccessViewSet(
             .filter(
                 Q(user=self.request.user) | Q(part_request__requester=self.request.user)
             )
+            .filter(part_request__expires_at__gt=timezone.now())
             .order_by("-requested_at", "-id")
         )
 
@@ -771,6 +773,10 @@ class PartRequestAccessViewSet(
         serializer.is_valid(raise_exception=True)
 
         part_request = serializer.validated_data["part_request"]
+        if part_request.is_expired:
+            raise ValidationError(
+                {"part_request": "This request has expired and is no longer available."}
+            )
         conversation = serializer.validated_data.get("conversation")
         if conversation is None:
             raise ValidationError({"conversation": "conversation is required."})

@@ -450,6 +450,7 @@ class PartRequestSerializer(serializers.ModelSerializer):
             "my_access_status",
             "granted_user",
             "created_at",
+            "expires_at",
             "updated_at",
         ]
         read_only_fields = [
@@ -458,6 +459,7 @@ class PartRequestSerializer(serializers.ModelSerializer):
             "title_language",
             "description_language",
             "created_at",
+            "expires_at",
             "updated_at",
         ]
 

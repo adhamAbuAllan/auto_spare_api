@@ -1,0 +1,6 @@
+- [x] Expand MOCK_CAR_CATALOG in `api/mock_catalog_data.py` with expanded models
+- [x] Create the new migration `api/migrations/0017_seed_expanded_car_catalog.py`
+- [x] Run unit tests to verify migration schema integrity
+- [x] Run the migration against the remote Render database using the external connection string
+- [x] Verify migration success on the remote database
+- [/] Generate walkthrough summary
