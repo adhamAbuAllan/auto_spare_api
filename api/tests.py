@@ -181,6 +181,35 @@ class AppUpdateApiTests(ApiTestCase):
         self.assertEqual(payload["minimum_supported_build_number"], 2)
 
     @override_settings(
+        APP_UPDATE_LATEST_IOS_VERSION="3.1.0",
+        APP_UPDATE_LATEST_IOS_BUILD=3,
+        APP_UPDATE_MIN_IOS_VERSION="",
+        APP_UPDATE_MIN_IOS_BUILD=None,
+        APP_UPDATE_IOS_STORE_URL="https://apps.apple.com/us/app/mta-%D7%A9%D7%95%D7%A7-%D7%97%D7%9C%D7%A7%D7%99-%D7%97%D7%99%D7%9C%D7%95%D7%A3-%D7%9C%D7%A8%D7%9B%D7%91/id6776418788",
+        APP_UPDATE_TITLE="",
+        APP_UPDATE_MESSAGE="",
+        APP_UPDATE_RELEASE_NOTES="",
+    )
+    def test_app_update_returns_available_ios_update(self):
+        response = self.client.get(
+            "/api/app-update/",
+            {
+                "platform": "ios",
+                "version": "3.0.0",
+                "build": "2",
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertTrue(payload["update_available"])
+        self.assertFalse(payload["update_required"])
+        self.assertEqual(
+            payload["ios_store_url"],
+            "https://apps.apple.com/us/app/mta-%D7%A9%D7%95%D7%A7-%D7%97%D7%9C%D7%A7%D7%99-%D7%97%D7%99%D7%9C%D7%95%D7%A3-%D7%9C%D7%A8%D7%9B%D7%91/id6776418788",
+        )
+
+    @override_settings(
         APP_UPDATE_LATEST_ANDROID_VERSION="3.0.0",
         APP_UPDATE_LATEST_ANDROID_BUILD=2,
         APP_UPDATE_MIN_ANDROID_VERSION="",
