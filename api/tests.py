@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
 from rest_framework.test import APITestCase
@@ -119,6 +120,7 @@ class PrivacyPolicyPageTests(ApiTestCase):
         self.assertContains(response, 'data-lang="en"')
 
 
+@override_settings(APP_UPDATE_STORE_SYNC_ENABLED=False)
 class AppUpdateApiTests(ApiTestCase):
     @override_settings(
         APP_UPDATE_LATEST_ANDROID_VERSION="3.1.0",
@@ -233,6 +235,54 @@ class AppUpdateApiTests(ApiTestCase):
         payload = response.json()
         self.assertFalse(payload["update_available"])
         self.assertFalse(payload["update_required"])
+
+
+@override_settings(
+    APP_UPDATE_STORE_SYNC_ENABLED=True,
+    APP_UPDATE_STORE_CACHE_SECONDS=3600,
+    APP_UPDATE_ANDROID_PACKAGE_NAME="com.mta_spare_auto",
+    APP_UPDATE_IOS_APP_ID="6776418788",
+)
+class AppStoreVersionTests(ApiTestCase):
+    def setUp(self):
+        super().setUp()
+        cache.clear()
+
+    @patch("api.app_store_versions._fetch")
+    def test_android_uses_the_published_play_store_version(self, fetch):
+        fetch.return_value = '... "141":[[["3.4.6"]] ...'
+
+        response = self.client.get(
+            "/api/app-update/",
+            {"platform": "android", "version": "3.4.5", "build": "11"},
+        )
+
+        self.assertTrue(response.json()["update_available"])
+        self.assertEqual(response.json()["latest_version"], "3.4.6")
+        fetch.assert_called_once()
+
+    @patch("api.app_store_versions._fetch")
+    def test_ios_uses_the_published_app_store_version(self, fetch):
+        fetch.return_value = '{"resultCount": 1, "results": [{"version": "3.4.6"}]}'
+
+        response = self.client.get(
+            "/api/app-update/",
+            {"platform": "ios", "version": "3.4.5", "build": "11"},
+        )
+
+        self.assertTrue(response.json()["update_available"])
+        self.assertEqual(response.json()["latest_version"], "3.4.6")
+
+    @override_settings(APP_UPDATE_LATEST_ANDROID_VERSION="3.4.5")
+    @patch("api.app_store_versions._fetch", side_effect=OSError("offline"))
+    def test_store_failure_uses_the_configured_fallback(self, fetch):
+        response = self.client.get(
+            "/api/app-update/",
+            {"platform": "android", "version": "3.4.5", "build": "11"},
+        )
+
+        self.assertFalse(response.json()["update_available"])
+        self.assertEqual(response.json()["latest_version"], "3.4.5")
 
 
 class UsersApiTests(ApiTestCase):

@@ -348,6 +348,33 @@ APP_UPDATE_IOS_STORE_URL = os.getenv(
     "APP_UPDATE_IOS_STORE_URL",
     "https://apps.apple.com/us/app/mta-%D7%A9%D7%95%D7%A7-%D7%97%D7%9C%D7%A7%D7%99-%D7%97%D7%99%D7%9C%D7%95%D7%A3-%D7%9C%D7%A8%D7%9B%D7%91/id6776418788",
 ).strip()
+APP_UPDATE_STORE_SYNC_ENABLED = _env_bool(
+    os.getenv("APP_UPDATE_STORE_SYNC_ENABLED"),
+    default=True,
+)
+APP_UPDATE_STORE_CACHE_SECONDS = _env_int(
+    os.getenv("APP_UPDATE_STORE_CACHE_SECONDS"),
+) or 21600
+APP_UPDATE_STORE_TIMEOUT_SECONDS = _env_int(
+    os.getenv("APP_UPDATE_STORE_TIMEOUT_SECONDS"),
+) or 5
+APP_UPDATE_ANDROID_PACKAGE_NAME = os.getenv(
+    "APP_UPDATE_ANDROID_PACKAGE_NAME",
+    "com.mta_spare_auto",
+).strip()
+APP_UPDATE_ANDROID_STORE_LANGUAGE = os.getenv(
+    "APP_UPDATE_ANDROID_STORE_LANGUAGE",
+    "en",
+).strip() or "en"
+APP_UPDATE_ANDROID_STORE_COUNTRY = os.getenv(
+    "APP_UPDATE_ANDROID_STORE_COUNTRY",
+    "US",
+).strip() or "US"
+APP_UPDATE_IOS_APP_ID = os.getenv("APP_UPDATE_IOS_APP_ID", "6776418788").strip()
+APP_UPDATE_IOS_STORE_COUNTRY = os.getenv(
+    "APP_UPDATE_IOS_STORE_COUNTRY",
+    "US",
+).strip() or "US"
 APP_UPDATE_TITLE = os.getenv("APP_UPDATE_TITLE", "").strip()
 APP_UPDATE_MESSAGE = os.getenv("APP_UPDATE_MESSAGE", "").strip()
 APP_UPDATE_RELEASE_NOTES = os.getenv("APP_UPDATE_RELEASE_NOTES", "").strip()

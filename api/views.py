@@ -73,6 +73,7 @@ from .serializers import (
     normalize_phone_number,
 )
 from .car_catalog_sync import CarCatalogSyncService, CarImagesApiError
+from .app_store_versions import latest_store_version
 from .translation import (
     localize_conversation_response_data,
     localize_message_response_data,
@@ -195,7 +196,9 @@ def _platform_update_settings(platform):
     normalized_platform = str(platform or "").strip().lower()
     if normalized_platform == "ios":
         return {
-            "latest_version": settings.APP_UPDATE_LATEST_IOS_VERSION,
+            "latest_version": latest_store_version(
+                "ios", settings.APP_UPDATE_LATEST_IOS_VERSION
+            ),
             "latest_build_number": settings.APP_UPDATE_LATEST_IOS_BUILD,
             "minimum_supported_version": settings.APP_UPDATE_MIN_IOS_VERSION,
             "minimum_supported_build_number": settings.APP_UPDATE_MIN_IOS_BUILD,
@@ -203,7 +206,9 @@ def _platform_update_settings(platform):
         }
 
     return {
-        "latest_version": settings.APP_UPDATE_LATEST_ANDROID_VERSION,
+        "latest_version": latest_store_version(
+            "android", settings.APP_UPDATE_LATEST_ANDROID_VERSION
+        ),
         "latest_build_number": settings.APP_UPDATE_LATEST_ANDROID_BUILD,
         "minimum_supported_version": settings.APP_UPDATE_MIN_ANDROID_VERSION,
         "minimum_supported_build_number": settings.APP_UPDATE_MIN_ANDROID_BUILD,
