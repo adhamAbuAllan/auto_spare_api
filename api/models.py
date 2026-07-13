@@ -444,6 +444,7 @@ class MobileDevice(models.Model):
     push_token = models.CharField(max_length=255, blank=True)
     device_name = models.CharField(max_length=120, blank=True)
     app_version = models.CharField(max_length=50, blank=True)
+    notification_language = models.CharField(max_length=12, default="en")
     is_active = models.BooleanField(default=True)
     last_seen_at = models.DateTimeField(auto_now=True)
     created_at = models.DateTimeField(auto_now_add=True)

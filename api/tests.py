@@ -9,6 +9,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from chat.runtime import add_globally_connected_user, reset_runtime_state
+from chat.push_notifications import _NOTIFICATION_TEXT, _build_message_preview
 
 from .models import (
     ApiUser,
@@ -283,6 +284,16 @@ class AppStoreVersionTests(ApiTestCase):
 
         self.assertFalse(response.json()["update_available"])
         self.assertEqual(response.json()["latest_version"], "3.4.5")
+
+
+class PushNotificationLanguageTests(ApiTestCase):
+    def test_message_preview_uses_the_recipient_language(self):
+        preview = _build_message_preview(
+            {"message_type": "media"},
+            _NOTIFICATION_TEXT["ar"],
+        )
+
+        self.assertEqual(preview, "أرسل مرفقًا.")
 
 
 class UsersApiTests(ApiTestCase):
@@ -2063,6 +2074,7 @@ class MobileApiTests(ApiTestCase):
                 "push_token": "token-v1",
                 "device_name": "Pixel 9",
                 "app_version": "1.0.0",
+                "notification_language": "ar",
                 "is_active": True,
             },
             format="json",
@@ -2071,6 +2083,7 @@ class MobileApiTests(ApiTestCase):
         self.assertEqual(create_response.status_code, 201)
         self.assertEqual(MobileDevice.objects.count(), 1)
         self.assertEqual(MobileDevice.objects.first().push_token, "token-v1")
+        self.assertEqual(MobileDevice.objects.first().notification_language, "ar")
 
         update_response = self.client.post(
             "/api/mobile-devices/",
@@ -2080,6 +2093,7 @@ class MobileApiTests(ApiTestCase):
                 "push_token": "token-v2",
                 "device_name": "Pixel 9",
                 "app_version": "1.0.1",
+                "notification_language": "he-IL",
                 "is_active": True,
             },
             format="json",
@@ -2090,6 +2104,7 @@ class MobileApiTests(ApiTestCase):
         device = MobileDevice.objects.get()
         self.assertEqual(device.push_token, "token-v2")
         self.assertEqual(device.app_version, "1.0.1")
+        self.assertEqual(device.notification_language, "he")
 
     def test_mobile_device_validation_returns_clear_message(self):
         response = self.client.post(

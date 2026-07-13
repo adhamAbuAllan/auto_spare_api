@@ -690,6 +690,7 @@ class MobileDeviceSerializer(serializers.ModelSerializer):
     push_token = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     device_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     app_version = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    notification_language = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
     class Meta:
         model = MobileDevice
@@ -700,6 +701,7 @@ class MobileDeviceSerializer(serializers.ModelSerializer):
             "push_token",
             "device_name",
             "app_version",
+            "notification_language",
             "is_active",
             "last_seen_at",
             "created_at",
@@ -735,6 +737,11 @@ class MobileDeviceSerializer(serializers.ModelSerializer):
             attrs["device_name"] = self._normalize_optional_text(attrs.get("device_name"))
         if "app_version" in attrs:
             attrs["app_version"] = self._normalize_optional_text(attrs.get("app_version"))
+        if "notification_language" in attrs:
+            language = self._normalize_optional_text(
+                attrs.get("notification_language")
+            ).lower().split("-", 1)[0]
+            attrs["notification_language"] = language if language in {"en", "ar", "he"} else "en"
         return attrs
 
 

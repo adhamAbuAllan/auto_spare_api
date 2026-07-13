@@ -17,6 +17,36 @@ except ImportError:  # pragma: no cover - dependency is optional at import time
 
 _MISSING_SDK_LOGGED = False
 
+_NOTIFICATION_TEXT = {
+    "en": {
+        "new_message": "New message",
+        "message_fallback": "Sent you a new message.",
+        "attachment": "Sent an attachment.",
+        "shared_prefix": "Shared: ",
+        "shared_request": "Shared a product request.",
+        "new_request": "New seller request",
+        "request_fallback": "A user posted a new request.",
+    },
+    "ar": {
+        "new_message": "رسالة جديدة",
+        "message_fallback": "أرسل لك رسالة جديدة.",
+        "attachment": "أرسل مرفقًا.",
+        "shared_prefix": "تمت المشاركة: ",
+        "shared_request": "تمت مشاركة طلب قطعة.",
+        "new_request": "طلب جديد من بائع",
+        "request_fallback": "نشر أحد الاشخاص طلبًا جديدًا.",
+    },
+    "he": {
+        "new_message": "הודעה חדשה",
+        "message_fallback": "נשלחה אליך הודעה חדשה.",
+        "attachment": "נשלח קובץ מצורף.",
+        "shared_prefix": "שותף: ",
+        "shared_request": "שותפה בקשת מוצר.",
+        "new_request": "בקשת מוכר חדשה",
+        "request_fallback": "משתמש פרסם בקשה חדשה.",
+    },
+}
+
 
 def _mask_push_token(value):
     normalized = str(value or "").strip()
@@ -32,6 +62,12 @@ def _truncate_text(value, *, limit=140):
     if len(normalized) <= limit:
         return normalized
     return normalized[: max(limit - 3, 0)].rstrip() + "..."
+
+
+def _notification_text_for_device(device):
+    language = str(getattr(device, "notification_language", "") or "").lower()
+    language = language.split("-", 1)[0]
+    return _NOTIFICATION_TEXT.get(language, _NOTIFICATION_TEXT["en"])
 
 
 def _get_firebase_app():
@@ -178,7 +214,7 @@ def _dispatch_notification(*, device, title, body, data, channel_id):
         }
 
 
-def _build_message_preview(message_payload):
+def _build_message_preview(message_payload, strings):
     message_type = str(message_payload.get("message_type") or "text").strip().lower()
     text = _truncate_text(message_payload.get("text"), limit=180)
 
@@ -189,21 +225,21 @@ def _build_message_preview(message_payload):
     if message_type == "product" and isinstance(product, Mapping):
         title = _truncate_text(product.get("title"), limit=120)
         if title:
-            return f"Shared: {title}"
-        return "Shared a product request."
+            return f"{strings['shared_prefix']}{title}"
+        return strings["shared_request"]
 
     if message_type == "media":
-        return "Sent an attachment."
+        return strings["attachment"]
 
-    return "Sent you a new message."
+    return strings["message_fallback"]
 
 
 def _build_request_preview(part_request):
     title = _truncate_text(getattr(part_request, "title", ""), limit=120)
     description = _truncate_text(getattr(part_request, "description", ""), limit=180)
     return {
-        "title": title or "New seller request",
-        "description": description or "A supplier posted a new request.",
+        "title": title,
+        "description": description,
     }
 
 
@@ -219,11 +255,14 @@ def _send_request_notification_to_devices(
 ):
     results = []
     for device in devices:
+        strings = _notification_text_for_device(device)
+        title = request_title or strings["new_request"]
         body = (
             request_description
             if device.user.chat_message_preview_enabled
-            else "A supplier posted a new request."
+            else strings["request_fallback"]
         )
+        body = body or strings["request_fallback"]
         data = {
             "event_type": "request_created",
             "request_id": request_id,
@@ -231,7 +270,7 @@ def _send_request_notification_to_devices(
             "request_title": request_title,
             "request_description": request_description,
             "seller_name": seller_name,
-            "title": request_title,
+            "title": title,
             "body": body,
             "app_name": "MTA Auto Spare",
             "server_timestamp": server_timestamp,
@@ -239,7 +278,7 @@ def _send_request_notification_to_devices(
         results.append(
             _dispatch_notification(
                 device=device,
-                title=request_title,
+                title=title,
                 body=body,
                 data=data,
                 channel_id=settings.FCM_ANDROID_ACTIVITY_CHANNEL_ID,
@@ -284,12 +323,13 @@ def send_chat_message_push_notifications(message_payload):
 
     for devices in devices_by_user.values():
         for device in devices:
+            strings = _notification_text_for_device(device)
             body = (
-                _build_message_preview(message_payload)
+                _build_message_preview(message_payload, strings)
                 if device.user.chat_message_preview_enabled
-                else "Sent you a new message."
+                else strings["message_fallback"]
             )
-            title = sender_name or "New message"
+            title = sender_name or strings["new_message"]
             data = {
                 "event_type": "chat_message",
                 "conversation_id": conversation_id,
