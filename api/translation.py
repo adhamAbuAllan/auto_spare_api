@@ -27,21 +27,25 @@ _ARABIC_BLOCKS = (
     (0xFE70, 0xFEFF),
 )
 _HEBREW_BLOCKS = ((0x0590, 0x05FF),)
+_CYRILLIC_BLOCKS = ((0x0400, 0x052F),)
 _PART_REQUEST_STATUS_LABELS = {
     "awaiting": {
         "en": "Awaiting",
         "ar": "بانتظار",
         "he": "ממתין",
+        "ru": "В ожидании",
     },
     "in_progress": {
         "en": "In Progress",
         "ar": "قيد التنفيذ",
         "he": "בטיפול",
+        "ru": "В обработке",
     },
     "cancelled": {
         "en": "Cancelled",
         "ar": "ملغي",
         "he": "בוטל",
+        "ru": "Отменено",
     },
 }
 _PART_REQUEST_STATUS_ENGLISH_TO_CODE = {
@@ -74,6 +78,12 @@ _KNOWN_SYSTEM_MESSAGE_TEMPLATES = {
         "approve_access": 'אושרה גישה לניהול הסטטוס של "{title}".',
         "reject_access": 'נדחתה הגישה לניהול הסטטוס של "{title}".',
         "status_updated": 'הסטטוס של "{title}" עודכן מ"{from_label}" ל"{to_label}".',
+    },
+    "ru": {
+        "request_access": 'Запрошен доступ для управления статусом «{title}».',
+        "approve_access": 'Одобрен доступ для управления статусом «{title}».',
+        "reject_access": 'Отклонён доступ для управления статусом «{title}».',
+        "status_updated": 'Статус «{title}» изменён с «{from_label}» на «{to_label}».',
     },
 }
 
@@ -212,11 +222,13 @@ def _heuristic_detect_language(text):
 
     arabic_count = _count_characters_in_blocks(text, _ARABIC_BLOCKS)
     hebrew_count = _count_characters_in_blocks(text, _HEBREW_BLOCKS)
+    cyrillic_count = _count_characters_in_blocks(text, _CYRILLIC_BLOCKS)
     latin_count = sum(1 for char in text if char.isascii() and char.isalpha())
 
     counts = {
         "ar": arabic_count,
         "he": hebrew_count,
+        "ru": cyrillic_count,
         "en": latin_count,
     }
     language, count = max(counts.items(), key=lambda item: item[1])

@@ -741,7 +741,7 @@ class MobileDeviceSerializer(serializers.ModelSerializer):
             language = self._normalize_optional_text(
                 attrs.get("notification_language")
             ).lower().split("-", 1)[0]
-            attrs["notification_language"] = language if language in {"en", "ar", "he"} else "en"
+            attrs["notification_language"] = language if language in {"en", "ar", "he", "ru"} else "en"
         return attrs
 
 

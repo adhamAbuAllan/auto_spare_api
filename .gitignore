@@ -3,6 +3,7 @@ __pycache__/
 .DS_Store
 .env
 firebase-service-account.json
+mta-auto-spare-3a55dccdd0a0.json
 db.sqlite3
 db.sqlite3.bak
 media/

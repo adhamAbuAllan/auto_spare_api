@@ -1654,7 +1654,7 @@ class ConversationApiTests(ApiTestCase):
     def test_http_voice_message_accepts_m4a_upload(self):
         upload = SimpleUploadedFile(
             "voice-note.m4a",
-            b"fake m4a bytes for validation coverage",
+            b"m4a audio payload" * 100,
             content_type="audio/mp4",
         )
 
@@ -1673,6 +1673,27 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(response.json()["message_type"], "media")
         self.assertEqual(len(response.json()["media"]), 1)
         self.assertEqual(response.json()["media"][0]["content_type"], "audio/mp4")
+
+    def test_http_voice_message_rejects_interrupted_tiny_upload(self):
+        upload = SimpleUploadedFile(
+            "interrupted-voice-note.m4a",
+            b"partial",
+            content_type="audio/mp4",
+        )
+
+        response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "media",
+                "client_timestamp": "2026-03-23T10:15:00Z",
+                "files": [upload],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("Voice messages are too short", str(response.json()))
 
     def test_conversation_participants_are_scoped_to_request_user(self):
         outsider = self.create_user(username="outsider", email="outsider@example.com")

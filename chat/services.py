@@ -159,6 +159,8 @@ def _validate_attachment_payload(*, content_type, size):
         raise ValueError(f"Unsupported media content_type: {content_type}.")
     if size <= 0:
         raise ValueError("Media attachments must not be empty.")
+    if content_type.startswith("audio/") and size < settings.CHAT_MIN_AUDIO_BYTES:
+        raise ValueError("Voice messages are too short or corrupted. Please record again.")
     if size > settings.CHAT_MAX_MEDIA_BYTES:
         raise ValueError(
             f"Media attachments must be {settings.CHAT_MAX_MEDIA_BYTES} bytes or smaller."

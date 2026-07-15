@@ -45,6 +45,15 @@ _NOTIFICATION_TEXT = {
         "new_request": "בקשת מוכר חדשה",
         "request_fallback": "משתמש פרסם בקשה חדשה.",
     },
+    "ru": {
+        "new_message": "Новое сообщение",
+        "message_fallback": "Вам отправлено новое сообщение.",
+        "attachment": "Отправлено вложение.",
+        "shared_prefix": "Поделились: ",
+        "shared_request": "Поделились запросом на запчасть.",
+        "new_request": "Новый запрос продавца",
+        "request_fallback": "Пользователь опубликовал новый запрос.",
+    },
 }
 
 

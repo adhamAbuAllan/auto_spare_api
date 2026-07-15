@@ -306,6 +306,7 @@ SIMPLE_JWT = {
 }
 
 CHAT_MAX_MEDIA_BYTES = int(os.getenv("CHAT_MAX_MEDIA_BYTES", str(5 * 1024 * 1024)))
+CHAT_MIN_AUDIO_BYTES = int(os.getenv("CHAT_MIN_AUDIO_BYTES", "1024"))
 CHAT_PRESENCE_TTL_SECONDS = int(os.getenv("CHAT_PRESENCE_TTL_SECONDS", "75"))
 CHAT_TYPING_TTL_SECONDS = int(os.getenv("CHAT_TYPING_TTL_SECONDS", "8"))
 CHAT_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("CHAT_HEARTBEAT_INTERVAL_SECONDS", "20"))
@@ -382,7 +383,7 @@ TRANSLATION_ENABLED = _env_bool(os.getenv("TRANSLATION_ENABLED"), default=False)
 TRANSLATION_PROVIDER = os.getenv("TRANSLATION_PROVIDER", "google").strip().lower()
 TRANSLATION_SUPPORTED_LANGUAGES = tuple(
     item.strip().lower()
-    for item in os.getenv("TRANSLATION_SUPPORTED_LANGUAGES", "en,ar,he").split(",")
+    for item in os.getenv("TRANSLATION_SUPPORTED_LANGUAGES", "en,ar,he,ru").split(",")
     if item.strip()
 )
 TRANSLATION_GOOGLE_LOCATION = os.getenv(
