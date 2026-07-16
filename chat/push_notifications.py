@@ -1,11 +1,15 @@
 import logging
 from collections import defaultdict
 from collections.abc import Mapping
+from datetime import datetime
 
 from django.conf import settings
+from django.db.models import Value
+from django.db.models.functions import Coalesce
+from django.utils import timezone
 
 from api.firebase import get_firebase_app
-from api.models import ApiUser, ConversationParticipant, MobileDevice
+from api.models import ApiUser, ConversationParticipant, MobileDevice, Message
 
 logger = logging.getLogger("chat.push")
 
@@ -113,6 +117,20 @@ def _group_active_push_devices(*, user_ids):
     return device_map
 
 
+def _get_unread_count(user_id):
+    epoch = timezone.make_aware(datetime(1970, 1, 1))
+    return Message.objects.filter(
+        conversation__participants__user_id=user_id,
+        is_deleted=False,
+    ).exclude(
+        sender_id=user_id
+    ).exclude(
+        hidden_for_users__user_id=user_id
+    ).filter(
+        server_timestamp__gt=Coalesce("conversation__participants__last_read_at", Value(epoch))
+    ).count()
+
+
 def _stringify_data(data):
     payload = {}
     for key, value in data.items():
@@ -122,25 +140,30 @@ def _stringify_data(data):
     return payload
 
 
-def _build_apns_config(*, title, body):
+def _build_apns_config(*, title, body, badge=None):
     if messaging is None:
         return None
+    
+    aps_kwargs = {
+        "alert": messaging.ApsAlert(title=title, body=body),
+        "sound": "default",
+    }
+    if badge is not None:
+        aps_kwargs["badge"] = badge
+
     return messaging.APNSConfig(
         headers={
             "apns-priority": "10",
         },
         payload=messaging.APNSPayload(
-            aps=messaging.Aps(
-                alert=messaging.ApsAlert(title=title, body=body),
-                sound="default",
-            ),
+            aps=messaging.Aps(**aps_kwargs),
         ),
     )
 
 
-def _send_fcm_message(*, token, title, body, data, channel_id, app):
+def _send_fcm_message(*, token, title, body, data, channel_id, app, badge=None):
     android_config = messaging.AndroidConfig(priority="high")
-    apns_config = _build_apns_config(title=title, body=body)
+    apns_config = _build_apns_config(title=title, body=body, badge=badge)
     message = messaging.Message(
         token=token,
         data=_stringify_data(data),
@@ -167,7 +190,7 @@ def _is_sent_dispatch_result(result):
     return bool(result)
 
 
-def _dispatch_notification(*, device, title, body, data, channel_id):
+def _dispatch_notification(*, device, title, body, data, channel_id, badge=None):
     app = _get_firebase_app()
     base_result = _base_dispatch_result(device=device, channel_id=channel_id)
     if app is None:
@@ -196,6 +219,7 @@ def _dispatch_notification(*, device, title, body, data, channel_id):
             data=data,
             channel_id=channel_id,
             app=app,
+            badge=badge,
         )
         logger.info(
             "Sent chat push notification to user %s device %s on channel %s.",
@@ -264,6 +288,7 @@ def _send_request_notification_to_devices(
 ):
     results = []
     for device in devices:
+        unread_count = _get_unread_count(device.user_id)
         strings = _notification_text_for_device(device)
         title = request_title or strings["new_request"]
         body = (
@@ -283,6 +308,7 @@ def _send_request_notification_to_devices(
             "body": body,
             "app_name": "MTA Auto Spare",
             "server_timestamp": server_timestamp,
+            "unread_count": str(unread_count),
         }
         results.append(
             _dispatch_notification(
@@ -291,6 +317,7 @@ def _send_request_notification_to_devices(
                 body=body,
                 data=data,
                 channel_id=settings.FCM_ANDROID_ACTIVITY_CHANNEL_ID,
+                badge=unread_count,
             )
         )
     return results
@@ -330,7 +357,9 @@ def send_chat_message_push_notifications(message_payload):
 
     sent_count = 0
 
-    for devices in devices_by_user.values():
+    for user_id, devices in devices_by_user.items():
+        unread_count = _get_unread_count(user_id)
+        
         for device in devices:
             strings = _notification_text_for_device(device)
             body = (
@@ -352,6 +381,7 @@ def send_chat_message_push_notifications(message_payload):
                 "chat_message_type": str(message_payload.get("message_type") or "text").strip()
                 or "text",
                 "server_timestamp": message_payload.get("server_timestamp"),
+                "unread_count": str(unread_count),
             }
             if _is_sent_dispatch_result(
                 _dispatch_notification(
@@ -360,6 +390,7 @@ def send_chat_message_push_notifications(message_payload):
                     body=body,
                     data=data,
                     channel_id=settings.FCM_ANDROID_MESSAGE_CHANNEL_ID,
+                    badge=unread_count,
                 )
             ):
                 sent_count += 1
