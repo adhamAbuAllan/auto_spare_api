@@ -1695,6 +1695,75 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn("Voice messages are too short", str(response.json()))
 
+    def test_http_voice_message_accepts_webm_with_parameters(self):
+        upload = SimpleUploadedFile(
+            "voice-note.webm",
+            b"webm audio payload" * 15,  # 270 bytes
+            content_type="audio/webm;codecs=opus",
+        )
+
+        response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "media",
+                "client_timestamp": "2026-03-23T10:16:00Z",
+                "files": [upload],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["message_type"], "media")
+        self.assertEqual(len(response.json()["media"]), 1)
+        # Verify content_type is accepted and matches base type
+        self.assertTrue(response.json()["media"][0]["content_type"].startswith("audio/webm"))
+
+    def test_http_voice_message_accepts_caf_and_other_mobile_formats(self):
+        upload = SimpleUploadedFile(
+            "voice-note.caf",
+            b"caf audio payload" * 15,  # 255 bytes
+            content_type="audio/x-caf",
+        )
+
+        response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "media",
+                "client_timestamp": "2026-03-23T10:17:00Z",
+                "files": [upload],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["message_type"], "media")
+        self.assertEqual(response.json()["media"][0]["content_type"], "audio/x-caf")
+
+    def test_http_voice_message_accepts_short_note(self):
+        # 100 bytes is smaller than old 1024 limit, but larger than new 64 limit
+        upload = SimpleUploadedFile(
+            "short-voice-note.m4a",
+            b"short note" * 10,
+            content_type="audio/mp4",
+        )
+
+        response = self.client.post(
+            "/api/messages/",
+            data={
+                "conversation": self.conversation.id,
+                "message_type": "media",
+                "client_timestamp": "2026-03-23T10:18:00Z",
+                "files": [upload],
+            },
+            format="multipart",
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.json()["message_type"], "media")
+        self.assertEqual(response.json()["media"][0]["content_type"], "audio/mp4")
+
     def test_conversation_participants_are_scoped_to_request_user(self):
         outsider = self.create_user(username="outsider", email="outsider@example.com")
         other_conversation = Conversation.objects.create(title="Private")

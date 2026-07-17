@@ -306,7 +306,7 @@ SIMPLE_JWT = {
 }
 
 CHAT_MAX_MEDIA_BYTES = int(os.getenv("CHAT_MAX_MEDIA_BYTES", str(5 * 1024 * 1024)))
-CHAT_MIN_AUDIO_BYTES = int(os.getenv("CHAT_MIN_AUDIO_BYTES", "1024"))
+CHAT_MIN_AUDIO_BYTES = int(os.getenv("CHAT_MIN_AUDIO_BYTES", "64"))
 CHAT_PRESENCE_TTL_SECONDS = int(os.getenv("CHAT_PRESENCE_TTL_SECONDS", "75"))
 CHAT_TYPING_TTL_SECONDS = int(os.getenv("CHAT_TYPING_TTL_SECONDS", "8"))
 CHAT_HEARTBEAT_INTERVAL_SECONDS = int(os.getenv("CHAT_HEARTBEAT_INTERVAL_SECONDS", "20"))
@@ -321,6 +321,27 @@ CHAT_ALLOWED_MEDIA_TYPES = tuple(
     ).split(",")
     if item.strip()
 )
+
+# Ensure essential voice message formats are always allowed to prevent failures on mobile devices/web
+ESSENTIAL_AUDIO_TYPES = (
+    "audio/x-caf",
+    "audio/caf",
+    "audio/3gpp",
+    "audio/3gp",
+    "audio/amr",
+    "audio/webm",
+    "audio/ogg",
+    "audio/wav",
+    "audio/x-wav",
+    "audio/mpeg",
+    "audio/mp4",
+    "audio/aac",
+    "audio/x-m4a",
+    "audio/mp4a-latm",
+)
+for mime in ESSENTIAL_AUDIO_TYPES:
+    if mime not in CHAT_ALLOWED_MEDIA_TYPES:
+        CHAT_ALLOWED_MEDIA_TYPES += (mime,)
 
 CHAT_LOG_LEVEL = os.getenv("CHAT_LOG_LEVEL", "INFO").upper()
 FCM_SERVICE_ACCOUNT_FILE = os.getenv("FCM_SERVICE_ACCOUNT_FILE", "").strip()

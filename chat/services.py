@@ -155,11 +155,15 @@ def serialize_message_payload(message):
 def _validate_attachment_payload(*, content_type, size):
     if not content_type:
         raise ValueError("Media attachments must include a content_type.")
-    if settings.CHAT_ALLOWED_MEDIA_TYPES and content_type not in settings.CHAT_ALLOWED_MEDIA_TYPES:
+    
+    # Strip parameters like codecs (e.g. "audio/webm;codecs=opus" -> "audio/webm")
+    normalized_content_type = content_type.split(";")[0].strip().lower()
+
+    if settings.CHAT_ALLOWED_MEDIA_TYPES and normalized_content_type not in settings.CHAT_ALLOWED_MEDIA_TYPES:
         raise ValueError(f"Unsupported media content_type: {content_type}.")
     if size <= 0:
         raise ValueError("Media attachments must not be empty.")
-    if content_type.startswith("audio/") and size < settings.CHAT_MIN_AUDIO_BYTES:
+    if normalized_content_type.startswith("audio/") and size < settings.CHAT_MIN_AUDIO_BYTES:
         raise ValueError("Voice messages are too short or corrupted. Please record again.")
     if size > settings.CHAT_MAX_MEDIA_BYTES:
         raise ValueError(
