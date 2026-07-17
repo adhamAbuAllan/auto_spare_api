@@ -107,17 +107,29 @@ def _get_redis_client(now=None):
         return None
 
     try:
-        _redis_client = redis.Redis(
-            host=getattr(settings, "REDIS_HOST", "127.0.0.1"),
-            port=int(getattr(settings, "REDIS_PORT", 6379)),
-            db=int(os.getenv("REDIS_DB", "0")),
-            decode_responses=True,
-            socket_connect_timeout=1,
-            socket_timeout=1,
-        )
+        redis_url = getattr(settings, "REDIS_URL", "").strip()
+
+        if redis_url:
+            _redis_client = redis.Redis.from_url(
+                redis_url,
+                decode_responses=True,
+                socket_connect_timeout=1,
+                socket_timeout=1,
+            )
+        else:
+            _redis_client = redis.Redis(
+                host=getattr(settings, "REDIS_HOST", "127.0.0.1"),
+                port=int(getattr(settings, "REDIS_PORT", 6379)),
+                db=int(os.getenv("REDIS_DB", "0")),
+                decode_responses=True,
+                socket_connect_timeout=1,
+                socket_timeout=1,
+            )
+
         _redis_client.ping()
         _redis_next_retry_at = 0.0
         return _redis_client
+
     except Exception as exc:
         _mark_redis_failure(exc, now=current)
         return None

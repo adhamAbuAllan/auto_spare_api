@@ -250,7 +250,7 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-MEDIA_URL = os.getenv("MEDIA_URL", "media/")
+MEDIA_URL = os.getenv("MEDIA_URL", "/media/")
 MEDIA_ROOT = Path(os.getenv("MEDIA_ROOT", BASE_DIR / "media"))
 
 CHANNEL_LAYER_BACKEND = os.getenv("CHANNEL_LAYER_BACKEND", "redis").strip().lower()
