@@ -658,10 +658,12 @@ class PartRequestSerializer(serializers.ModelSerializer):
 
 class PartImageSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
+    width = serializers.SerializerMethodField()
+    height = serializers.SerializerMethodField()
 
     class Meta:
         model = PartImage
-        fields = ["id", "part_request", "image", "created_at"]
+        fields = ["id", "part_request", "image", "width", "height", "created_at"]
         read_only_fields = ["id", "created_at"]
 
     def get_image(self, obj):
@@ -670,6 +672,12 @@ class PartImageSerializer(serializers.ModelSerializer):
         url = obj.image.url
         request = self.context.get("request")
         return request.build_absolute_uri(url) if request else url
+
+    def get_width(self, obj):
+        return obj.image.width if obj.image else None
+
+    def get_height(self, obj):
+        return obj.image.height if obj.image else None
 
 
 class ConversationSerializer(serializers.ModelSerializer):

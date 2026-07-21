@@ -922,6 +922,9 @@ class PartRequestApiTests(ApiTestCase):
         request = PartRequest.objects.get(pk=payload["id"])
         self.assertIsNone(request.city)
         self.assertEqual(request.images.count(), 1)
+        stored_image = request.images.get()
+        self.assertEqual(payload["images"][0]["width"], stored_image.image.width)
+        self.assertEqual(payload["images"][0]["height"], stored_image.image.height)
 
     def test_create_part_request_triggers_request_created_push_notifications(self):
         with patch("api.views.send_request_created_push_notifications") as push_mock:
