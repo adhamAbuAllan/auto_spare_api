@@ -1,13 +1,21 @@
+import logging
 from datetime import timedelta
+from io import BytesIO
+from pathlib import Path
 
 from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
+from django.core.files.base import ContentFile
 from django.db import models
 from django.utils import timezone
 from django.utils.text import slugify
+from PIL import Image, ImageOps
 
 
 PART_REQUEST_LIFETIME = timedelta(hours=48)
+REQUEST_IMAGE_THUMBNAIL_SIZE = (600, 600)
+
+logger = logging.getLogger(__name__)
 
 
 def default_part_request_expiry():
@@ -239,7 +247,55 @@ class PartImage(models.Model):
         PartRequest, on_delete=models.CASCADE, related_name="images"
     )
     image = models.ImageField(upload_to="part_requests/")
+    thumbnail = models.ImageField(
+        upload_to="part_request_thumbnails/",
+        blank=True,
+        null=True,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def save(self, *args, **kwargs):
+        previous_image_name = None
+        if self.pk:
+            previous_image_name = type(self).objects.filter(pk=self.pk).values_list(
+                "image",
+                flat=True,
+            ).first()
+
+        super().save(*args, **kwargs)
+
+        if self.image and (not self.thumbnail or previous_image_name != self.image.name):
+            if self.thumbnail:
+                self.thumbnail.delete(save=False)
+                self.thumbnail = None
+            self.generate_thumbnail()
+
+    def generate_thumbnail(self):
+        if not self.image:
+            return False
+
+        try:
+            with self.image.open("rb") as source:
+                with Image.open(source) as opened_image:
+                    image = ImageOps.exif_transpose(opened_image)
+                    image.thumbnail(REQUEST_IMAGE_THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
+                    if image.mode != "RGB":
+                        image = image.convert("RGB")
+
+                    output = BytesIO()
+                    image.save(output, format="JPEG", quality=80, optimize=True)
+        except (OSError, ValueError) as exc:
+            logger.warning(
+                "Unable to create thumbnail for part request image %s: %s",
+                self.pk,
+                exc,
+            )
+            return False
+
+        thumbnail_name = f"{Path(self.image.name).stem}_thumbnail.jpg"
+        self.thumbnail.save(thumbnail_name, ContentFile(output.getvalue()), save=False)
+        super().save(update_fields=["thumbnail"])
+        return True
 
     def __str__(self):
         return f"Image for {self.part_request_id}"

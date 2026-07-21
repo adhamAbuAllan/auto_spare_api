@@ -599,6 +599,8 @@ class PartRequestViewSet(
         for image in images:
             if image.image:
                 image.image.delete(save=False)
+            if image.thumbnail:
+                image.thumbnail.delete(save=False)
             image.delete()
 
     def _create_part_images(self, part_request):

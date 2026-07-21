@@ -658,18 +658,33 @@ class PartRequestSerializer(serializers.ModelSerializer):
 
 class PartImageSerializer(serializers.ModelSerializer):
     image = serializers.SerializerMethodField()
+    thumbnail = serializers.SerializerMethodField()
     width = serializers.SerializerMethodField()
     height = serializers.SerializerMethodField()
 
     class Meta:
         model = PartImage
-        fields = ["id", "part_request", "image", "width", "height", "created_at"]
+        fields = [
+            "id",
+            "part_request",
+            "image",
+            "thumbnail",
+            "width",
+            "height",
+            "created_at",
+        ]
         read_only_fields = ["id", "created_at"]
 
     def get_image(self, obj):
-        if not obj.image:
+        return self._file_url(obj.image)
+
+    def get_thumbnail(self, obj):
+        return self._file_url(obj.thumbnail)
+
+    def _file_url(self, file_field):
+        if not file_field:
             return None
-        url = obj.image.url
+        url = file_field.url
         request = self.context.get("request")
         return request.build_absolute_uri(url) if request else url
 

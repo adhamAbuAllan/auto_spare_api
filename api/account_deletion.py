@@ -25,6 +25,7 @@ def collect_account_file_references(user):
 
     for image in PartImage.objects.filter(part_request__requester=user).iterator():
         remember(image.image)
+        remember(image.thumbnail)
 
     for attachment in MessageAttachment.objects.filter(message__sender=user).iterator():
         remember(attachment.file)

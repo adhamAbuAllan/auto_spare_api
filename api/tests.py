@@ -6,6 +6,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.cache import cache
 from django.test import override_settings
 from django.utils import timezone
+from PIL import Image
 from rest_framework.test import APITestCase
 
 from chat.runtime import add_globally_connected_user, reset_runtime_state
@@ -918,13 +919,21 @@ class PartRequestApiTests(ApiTestCase):
         self.assertEqual(len(payload["images"]), 1)
         self.assertTrue(payload["images"][0]["image"].startswith("http://testserver/media/"))
         self.assertIn("sample_part", payload["images"][0]["image"])
+        self.assertTrue(
+            payload["images"][0]["thumbnail"].startswith("http://testserver/media/")
+        )
 
         request = PartRequest.objects.get(pk=payload["id"])
         self.assertIsNone(request.city)
         self.assertEqual(request.images.count(), 1)
         stored_image = request.images.get()
+        self.assertTrue(stored_image.thumbnail)
         self.assertEqual(payload["images"][0]["width"], stored_image.image.width)
         self.assertEqual(payload["images"][0]["height"], stored_image.image.height)
+        with stored_image.thumbnail.open("rb") as thumbnail_file:
+            with Image.open(thumbnail_file) as thumbnail:
+                self.assertLessEqual(thumbnail.width, 600)
+                self.assertLessEqual(thumbnail.height, 600)
 
     def test_create_part_request_triggers_request_created_push_notifications(self):
         with patch("api.views.send_request_created_push_notifications") as push_mock:
