@@ -525,6 +525,16 @@ class PartRequestViewSet(
                 | Q(accepted_access_user_id=user.id)
             )
 
+            # Suppliers browse only requests for car models they support.
+            # Their own requests and requests already assigned to them remain
+            # visible if their supported-model list changes later.
+            if user.role == ApiUser.ROLE_SUPPLIER:
+                qs = qs.filter(
+                    Q(car_model__user_links__user_id=user.id)
+                    | Q(requester_id=user.id)
+                    | Q(accepted_access_user_id=user.id)
+                ).distinct()
+
         return qs
 
     def _ensure_request_owner(self, part_request):

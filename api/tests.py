@@ -873,6 +873,50 @@ class PartRequestApiTests(ApiTestCase):
         self.assertEqual(owner_response.json()["count"], 1)
         self.assertEqual(owner_response.json()["results"][0]["id"], part_request.id)
 
+    def test_supplier_list_only_includes_supported_car_models(self):
+        supplier = self.create_user(
+            username="audi-bmw-supplier",
+            email="audi-bmw-supplier@example.com",
+            role="supplier",
+        )
+        owner = self.create_user(username="request-owner", email="request-owner@example.com")
+        audi = self.create_car_model(make_name="Audi", model_name="A4")
+        bmw = self.create_car_model(make_name="BMW", model_name="X5")
+        toyota = self.create_car_model(make_name="Toyota", model_name="Camry")
+        UserCarModel.objects.bulk_create(
+            [
+                UserCarModel(user=supplier, car_model=audi),
+                UserCarModel(user=supplier, car_model=bmw),
+            ]
+        )
+        audi_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Audi A4 headlight",
+            status=self.status,
+            car_model=audi,
+        )
+        bmw_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need BMW X5 mirror",
+            status=self.status,
+            car_model=bmw,
+        )
+        PartRequest.objects.create(
+            requester=owner,
+            title="Need Toyota Camry bumper",
+            status=self.status,
+            car_model=toyota,
+        )
+
+        self.client.force_authenticate(user=supplier)
+        response = self.client.get("/api/part-requests/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {audi_request.id, bmw_request.id},
+        )
+
     def test_create_part_request_accepts_null_city(self):
         response = self.client.post(
             "/api/part-requests/",
