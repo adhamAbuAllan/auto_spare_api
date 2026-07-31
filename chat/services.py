@@ -100,10 +100,21 @@ def serialize_product(product):
     }
 
 
-def serialize_attachment(attachment):
+def _absolute_url(url, *, base_url=None):
+    if not url:
+        return None
+    if "://" in url or not base_url:
+        return url
+    return f"{base_url.rstrip('/')}/{url.lstrip('/')}"
+
+
+def serialize_attachment(attachment, *, base_url=None):
     return {
         "id": attachment.id,
-        "file_url": attachment.file.url if attachment.file else None,
+        "file_url": _absolute_url(
+            attachment.file.url if attachment.file else None,
+            base_url=base_url,
+        ),
         "content_type": attachment.content_type,
         "size": attachment.size,
         "created_at": attachment.created_at.isoformat(),
@@ -127,7 +138,7 @@ def serialize_reply(message):
     }
 
 
-def serialize_message_payload(message):
+def serialize_message_payload(message, *, base_url=None):
     if not hasattr(message, "sender"):
         message = _load_message_with_relations(message.pk)
 
@@ -140,7 +151,10 @@ def serialize_message_payload(message):
         "text_language": message.text_language or None,
         "product": serialize_product(message.product),
         "reply_to": serialize_reply(message.reply_to),
-        "media": [serialize_attachment(item) for item in message.attachments.all()],
+        "media": [
+            serialize_attachment(item, base_url=base_url)
+            for item in message.attachments.all()
+        ],
         "client_timestamp": message.client_timestamp.isoformat(),
         "server_timestamp": message.server_timestamp.isoformat(),
         "edited_at": message.edited_at.isoformat() if message.edited_at else None,
@@ -288,6 +302,7 @@ def create_message_with_statuses(
     files=None,
     media_files=None,
     delivered_user_ids=None,
+    base_url=None,
 ):
     message_type = message_type or "text"
     text = (text or "").strip()
@@ -318,7 +333,7 @@ def create_message_with_statuses(
         statuses = initialize_message_statuses(message, delivered_user_ids=delivered_user_ids)
         message = _load_message_with_relations(message.pk)
 
-    return serialize_message_payload(message), statuses
+    return serialize_message_payload(message, base_url=base_url), statuses
 
 
 def update_text_message(message, *, text):

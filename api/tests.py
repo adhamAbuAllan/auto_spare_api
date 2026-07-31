@@ -1425,10 +1425,34 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(response.status_code, 200)
         payload = response.json()
         self.assertEqual(len(payload["results"]), 2)
-        self.assertEqual(payload["results"][0]["text"], "Hi, I need the front bumper.")
-        self.assertEqual(payload["results"][1]["text"], "I can help with that.")
+        self.assertEqual(payload["results"][0]["text"], "I can help with that.")
+        self.assertEqual(payload["results"][1]["text"], "Hi, I need the front bumper.")
         self.assertEqual(payload["results"][0]["conversation_id"], self.conversation.id)
         self.assertEqual(payload["results"][0]["statuses"], [])
+
+    def test_list_messages_first_page_contains_newest_message(self):
+        newest_message = None
+        for index in range(21):
+            newest_message = Message.objects.create(
+                conversation=self.conversation,
+                sender=self.seller,
+                message_type="text",
+                text=f"History message {index}",
+                client_timestamp=timezone.now() + timedelta(minutes=index + 1),
+            )
+
+        response = self.client.get(
+            f"/api/messages/?conversation_id={self.conversation.id}"
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertEqual(len(payload["results"]), 20)
+        self.assertEqual(payload["results"][0]["id"], newest_message.id)
+        self.assertNotIn(
+            self.buyer_message.id,
+            {item["id"] for item in payload["results"]},
+        )
 
     def test_http_message_create_initializes_receipt_statuses(self):
         response = self.client.post(
@@ -1706,6 +1730,11 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(response.json()["message_type"], "media")
         self.assertEqual(len(response.json()["media"]), 1)
         self.assertEqual(response.json()["media"][0]["content_type"], "text/plain")
+        self.assertTrue(
+            response.json()["media"][0]["file_url"].startswith(
+                "http://testserver/media/message_attachments/"
+            )
+        )
 
     def test_http_voice_message_accepts_m4a_upload(self):
         upload = SimpleUploadedFile(
@@ -1729,6 +1758,11 @@ class ConversationApiTests(ApiTestCase):
         self.assertEqual(response.json()["message_type"], "media")
         self.assertEqual(len(response.json()["media"]), 1)
         self.assertEqual(response.json()["media"][0]["content_type"], "audio/mp4")
+        self.assertTrue(
+            response.json()["media"][0]["file_url"].startswith(
+                "http://testserver/media/message_attachments/"
+            )
+        )
 
     def test_http_voice_message_rejects_interrupted_tiny_upload(self):
         upload = SimpleUploadedFile(

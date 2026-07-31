@@ -83,6 +83,24 @@ class ChatConsumer(PresenceAwareConsumer):
         except (TypeError, ValueError):
             return False
 
+    def absolute_url_base(self):
+        def decode_header(value):
+            if isinstance(value, bytes):
+                return value.decode("latin1")
+            return str(value)
+
+        headers = {
+            decode_header(key).lower(): decode_header(value)
+            for key, value in self.scope.get("headers", [])
+        }
+        host = headers.get("x-forwarded-host") or headers.get("host")
+        if not host:
+            return None
+        proto = headers.get("x-forwarded-proto")
+        if not proto:
+            proto = "https" if self.scope.get("scheme") == "wss" else "http"
+        return f"{proto.split(',')[0].strip()}://{host.split(',')[0].strip()}/"
+
     def log_trace_payload(self, *, direction, payload=None, raw_text=None):
         if not self.should_trace_payloads():
             return
@@ -482,6 +500,7 @@ class ChatConsumer(PresenceAwareConsumer):
             reply_to=reply_to,
             media_files=media_files,
             delivered_user_ids=delivered_user_ids,
+            base_url=self.absolute_url_base(),
         )
         return {
             "message": message_payload,

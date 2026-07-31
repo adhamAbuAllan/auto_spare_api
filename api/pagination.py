@@ -9,4 +9,6 @@ class DefaultPagination(PageNumberPagination):
 
 class MessageCursorPagination(CursorPagination):
     page_size = 20
-    ordering = ("client_timestamp", "server_timestamp", "id")
+    # The chat screen currently loads the first page only. Return the newest
+    # messages there so a new message is not stranded on a later cursor page.
+    ordering = ("-client_timestamp", "-server_timestamp", "-id")

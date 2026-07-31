@@ -1189,6 +1189,7 @@ class MessageViewSet(
                 reply_to=reply_to,
                 files=files,
                 delivered_user_ids=delivered_user_ids,
+                base_url=request.build_absolute_uri("/"),
             )
         except ValueError as exc:
             raise ValidationError({"detail": str(exc)}) from exc
