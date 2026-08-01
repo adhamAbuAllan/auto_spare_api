@@ -15,12 +15,11 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.conf import settings
-from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView
-from django.views.static import serve
 from api.views import health, privacy_policy_page
+from config.media import serve_media
 
 urlpatterns = [
     path('', TemplateView.as_view(template_name='api/home.html'), name='home'),
@@ -29,8 +28,6 @@ urlpatterns = [
     path('api/', include('api.urls')),
     path('admin/', admin.site.urls),
 ]
-
-urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
 
 if settings.MEDIA_URL:
     media_url = settings.MEDIA_URL
@@ -42,7 +39,6 @@ if settings.MEDIA_URL:
     urlpatterns += [
         re_path(
             rf"^{media_url}(?P<path>.*)$",
-            serve,
-            {"document_root": settings.MEDIA_ROOT},
+            serve_media,
         )
     ]
