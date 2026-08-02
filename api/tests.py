@@ -550,6 +550,23 @@ class UsersApiTests(ApiTestCase):
         self.assertEqual(payload["status_code"], 401)
         self.assertEqual(payload["code"], "invalid_password")
 
+    def test_login_accepts_legacy_phone_without_plus_prefix(self):
+        self.create_user(phone="9722267380", password="Secur3Pass!2026")
+
+        response = self.client.post(
+            "/api/token/",
+            data={
+                "phone": "+9722267380",
+                "password": "Secur3Pass!2026",
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 200)
+        payload = response.json()
+        self.assertIn("access", payload)
+        self.assertIn("refresh", payload)
+
     @patch("api.serializers.verify_firebase_id_token")
     def test_password_reset_updates_password_after_firebase_phone_verification(
         self, verify_token

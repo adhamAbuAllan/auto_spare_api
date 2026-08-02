@@ -1,4 +1,5 @@
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from rest_framework.exceptions import AuthenticationFailed
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.views import TokenObtainPairView
@@ -6,6 +7,13 @@ from rest_framework_simplejwt.views import TokenObtainPairView
 
 def _normalize_login_phone(value):
     return str(value or "").strip().replace(" ", "").replace("-", "")
+
+
+def _login_phone_query(username_field, phone):
+    query = Q(**{username_field: phone})
+    if phone.startswith("+"):
+        query |= Q(**{username_field: phone[1:]})
+    return query
 
 
 class ClearTokenObtainPairSerializer(TokenObtainPairSerializer):
@@ -22,8 +30,13 @@ class ClearTokenObtainPairSerializer(TokenObtainPairSerializer):
         password = attrs.get("password", "")
         attrs[self.username_field] = phone
         user_model = get_user_model()
-        lookup = {user_model.USERNAME_FIELD: phone}
-        user = user_model._default_manager.filter(**lookup).first()
+        user = (
+            user_model._default_manager
+            .filter(_login_phone_query(user_model.USERNAME_FIELD, phone))
+            .first()
+        )
+        if user is not None:
+            attrs[self.username_field] = getattr(user, user_model.USERNAME_FIELD)
 
         if user is None:
             raise AuthenticationFailed(

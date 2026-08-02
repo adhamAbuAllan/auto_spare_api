@@ -12,6 +12,7 @@ from .views import (
     ConversationParticipantViewSet,
     ConversationViewSet,
     FirebaseRegistrationView,
+    RegistrationPhoneCheckView,
     FirebasePasswordResetView,
     MeView,
     MobileDeviceViewSet,
@@ -24,6 +25,7 @@ from .views import (
     SparePartViewSet,
     UserReportViewSet,
     app_update,
+    admin_dashboard,
     health,
 )
 from .car_images_proxy import car_images_api_proxy
@@ -55,8 +57,14 @@ urlpatterns = [
     path("health/", health, name="health"),
     path("car-catalog/", car_catalog, name="car_catalog"),
     path("app-update/", app_update, name="app_update"),
+    path("admin/dashboard/", admin_dashboard, name="admin_dashboard"),
     path("me/", MeView.as_view(), name="me"),
     path("register/", FirebaseRegistrationView.as_view(), name="register"),
+    path(
+        "register/check-phone/",
+        RegistrationPhoneCheckView.as_view(),
+        name="register_check_phone",
+    ),
     path("password-reset/", FirebasePasswordResetView.as_view(), name="password_reset"),
     path("token/", ClearTokenObtainPairView.as_view(), name="token_obtain_pair"),
     path("token/refresh/", TokenRefreshView.as_view(), name="token_refresh"),

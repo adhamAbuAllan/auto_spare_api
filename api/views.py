@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from itertools import zip_longest
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import (
     Case,
     Count,
@@ -26,6 +26,7 @@ from rest_framework.generics import RetrieveUpdateDestroyAPIView
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.throttling import AnonRateThrottle
 from rest_framework.views import APIView
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -46,6 +47,7 @@ from .models import (
     SparePart,
     UserReport,
 )
+from .models import Payment, Subscription
 from .pagination import MessageCursorPagination
 from .serializers import (
     ApiUserSerializer,
@@ -254,6 +256,39 @@ def app_update(request):
 
 
 @api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def admin_dashboard(request):
+    _ensure_admin_user(request.user)
+
+    return Response(
+        {
+            "users_total": ApiUser.objects.count(),
+            "users_active": ApiUser.objects.filter(is_active=True).count(),
+            "users_blocked": ApiUser.objects.filter(
+                is_active=False, blocked_at__isnull=False
+            ).count(),
+            "suppliers_total": ApiUser.objects.filter(role=ApiUser.ROLE_SUPPLIER).count(),
+            "reports_open": UserReport.objects.filter(
+                status=UserReport.STATUS_OPEN
+            ).count(),
+            "reports_total": UserReport.objects.count(),
+            "requests_total": PartRequest.objects.count(),
+            "conversations_total": Conversation.objects.count(),
+            "messages_total": Message.objects.count(),
+            "spare_parts_total": SparePart.objects.count(),
+            "car_makes_total": CarMake.objects.count(),
+            "car_models_total": CarModel.objects.count(),
+            "subscriptions_active": Subscription.objects.filter(
+                status=Subscription.STATUS_ACTIVE
+            ).count(),
+            "payments_pending": Payment.objects.filter(
+                status=Payment.STATUS_PENDING
+            ).count(),
+        }
+    )
+
+
+@api_view(["GET"])
 @permission_classes([AllowAny])
 def privacy_policy_page(request):
     return render(request, "api/privacy_policy.html")
@@ -267,10 +302,71 @@ class ApiUserViewSet(
     queryset = ApiUser.objects.prefetch_related("car_model_links__car_model__make").order_by("id")
     serializer_class = ApiUserSerializer
 
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        search = str(self.request.query_params.get("search", "") or "").strip()
+        role = str(self.request.query_params.get("role", "") or "").strip().lower()
+        status_filter = str(
+            self.request.query_params.get("status", "") or ""
+        ).strip().lower()
+
+        if search:
+            queryset = queryset.filter(
+                Q(name__icontains=search)
+                | Q(phone__icontains=search)
+                | Q(city__icontains=search)
+            )
+        if role in {ApiUser.ROLE_USER, ApiUser.ROLE_SUPPLIER}:
+            queryset = queryset.filter(role=role)
+        if status_filter == "active":
+            queryset = queryset.filter(is_active=True)
+        elif status_filter == "blocked":
+            queryset = queryset.filter(is_active=False, blocked_at__isnull=False)
+
+        return queryset
+
     def get_serializer_class(self):
         if self.action == "retrieve":
             return PublicUserProfileSerializer
         return ApiUserSerializer
+
+    @action(detail=True, methods=["post"], url_path="set-role")
+    def set_role(self, request, pk=None):
+        _ensure_admin_user(request.user)
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            raise ValidationError({"detail": "You cannot change your own role."})
+
+        role = str(request.data.get("role", "") or "").strip().lower()
+        if role not in {ApiUser.ROLE_USER, ApiUser.ROLE_SUPPLIER}:
+            raise ValidationError({"role": "Choose user or supplier."})
+
+        user.role = role
+        user.save(update_fields=["role"])
+        return Response(ApiUserSerializer(user, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="reset-password")
+    def reset_password(self, request, pk=None):
+        _ensure_admin_user(request.user)
+        user = self.get_object()
+        if user.pk == request.user.pk:
+            raise ValidationError({"detail": "Use the normal password flow for your own account."})
+
+        password = str(request.data.get("password", "") or "")
+        if len(password) < 8:
+            raise ValidationError({"password": "Password must be at least 8 characters."})
+
+        user.set_password(password)
+        user.save(update_fields=["password"])
+        return Response(ApiUserSerializer(user, context=self.get_serializer_context()).data)
+
+    @action(detail=True, methods=["post"], url_path="verify-phone")
+    def verify_phone(self, request, pk=None):
+        _ensure_admin_user(request.user)
+        user = self.get_object()
+        user.phone_verified_at = timezone.now()
+        user.save(update_fields=["phone_verified_at"])
+        return Response(ApiUserSerializer(user, context=self.get_serializer_context()).data)
 
     @action(detail=True, methods=["post"])
     def block(self, request, pk=None):
@@ -356,6 +452,33 @@ class FirebaseRegistrationView(APIView):
         )
 
 
+class RegistrationPhoneCheckThrottle(AnonRateThrottle):
+    """Limit unauthenticated phone-existence checks to reduce enumeration abuse."""
+
+    scope = "registration_phone_check"
+
+    def get_rate(self):
+        return "10/min"
+
+
+class RegistrationPhoneCheckView(APIView):
+    permission_classes = [AllowAny]
+    throttle_classes = [RegistrationPhoneCheckThrottle]
+    parser_classes = [JSONParser, FormParser]
+
+    def post(self, request):
+        try:
+            phone = normalize_phone_number(request.data.get("phone"))
+        except ValidationError as exc:
+            raise ValidationError({"phone": exc.detail}) from exc
+
+        return Response(
+            {
+                "available": not ApiUser.objects.filter(phone=phone).exists(),
+            }
+        )
+
+
 class FirebasePasswordResetView(APIView):
     permission_classes = [AllowAny]
     parser_classes = [JSONParser, FormParser]
@@ -370,14 +493,29 @@ class FirebasePasswordResetView(APIView):
 class SparePartViewSet(
     mixins.ListModelMixin,
     mixins.CreateModelMixin,
+    mixins.UpdateModelMixin,
+    mixins.DestroyModelMixin,
     viewsets.GenericViewSet,
 ):
     queryset = SparePart.objects.order_by("id")
     serializer_class = SparePartSerializer
 
+    def perform_create(self, serializer):
+        _ensure_admin_user(self.request.user)
+        serializer.save()
+
+    def perform_update(self, serializer):
+        _ensure_admin_user(self.request.user)
+        serializer.save()
+
+    def perform_destroy(self, instance):
+        _ensure_admin_user(self.request.user)
+        instance.delete()
+
 
 class CarMakeViewSet(
     mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
     viewsets.GenericViewSet,
 ):
     permission_classes = [AllowAny]
@@ -386,16 +524,47 @@ class CarMakeViewSet(
     def get_queryset(self):
         return CarMake.objects.prefetch_related("models").order_by("name")
 
+    def create(self, request, *args, **kwargs):
+        _ensure_admin_user(request.user)
+        name = str(request.data.get("name", "") or "").strip()
+        if not name:
+            raise ValidationError({"name": "Name is required."})
+        try:
+            make = CarMake.objects.create(name=name)
+        except IntegrityError as exc:
+            raise ValidationError({"name": "This make already exists."}) from exc
+        return Response(CarMakeSerializer(make, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        _ensure_admin_user(request.user)
+        make = self.get_object()
+        name = str(request.data.get("name", "") or "").strip()
+        if not name:
+            raise ValidationError({"name": "Name is required."})
+        make.name = name
+        make.save()
+        return Response(CarMakeSerializer(make, context={"request": request}).data)
+
+    partial_update = update
+
+    def destroy(self, request, *args, **kwargs):
+        _ensure_admin_user(request.user)
+        self.get_object().delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class CarModelViewSet(
     mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
     viewsets.GenericViewSet,
 ):
     permission_classes = [AllowAny]
     serializer_class = CarModelSerializer
 
     def get_queryset(self):
-        queryset = CarModel.objects.select_related("make").filter(is_active=True)
+        queryset = CarModel.objects.select_related("make")
+        if not _is_admin_user(self.request.user):
+            queryset = queryset.filter(is_active=True)
         make_id = str(self.request.query_params.get("make_id") or "").strip()
         make_slug = str(self.request.query_params.get("make") or "").strip().lower()
         search = str(
@@ -434,6 +603,44 @@ class CarModelViewSet(
 
         return queryset.order_by("make__name", "name")
 
+    def create(self, request, *args, **kwargs):
+        _ensure_admin_user(request.user)
+        name = str(request.data.get("name", "") or "").strip()
+        make_id = request.data.get("make_id")
+        if not name or not str(make_id or "").isdigit():
+            raise ValidationError({"detail": "A name and make_id are required."})
+        try:
+            make = CarMake.objects.get(pk=int(make_id))
+        except CarMake.DoesNotExist as exc:
+            raise ValidationError({"make_id": "Car make does not exist."}) from exc
+        model = CarModel(make=make, name=name)
+        model.save()
+        return Response(CarModelSerializer(model, context={"request": request}).data, status=status.HTTP_201_CREATED)
+
+    def update(self, request, *args, **kwargs):
+        _ensure_admin_user(request.user)
+        model = self.get_object()
+        name = str(request.data.get("name", "") or "").strip()
+        if not name:
+            raise ValidationError({"name": "Name is required."})
+        model.name = name
+        if str(request.data.get("make_id", "")).isdigit():
+            try:
+                model.make = CarMake.objects.get(pk=int(request.data["make_id"]))
+            except CarMake.DoesNotExist as exc:
+                raise ValidationError({"make_id": "Car make does not exist."}) from exc
+        if "is_active" in request.data:
+            model.is_active = bool(request.data["is_active"])
+        model.save()
+        return Response(CarModelSerializer(model, context={"request": request}).data)
+
+    partial_update = update
+
+    def destroy(self, request, *args, **kwargs):
+        _ensure_admin_user(request.user)
+        self.get_object().delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 class PartRequestStatusViewSet(
     mixins.ListModelMixin,
@@ -463,31 +670,34 @@ class PartRequestViewSet(
         return response
 
     def get_queryset(self):
-        qs = (
-            PartRequest.objects.select_related("requester", "status", "car_model__make")
-            .filter(expires_at__gt=timezone.now())
-            .annotate(
-                accepted_access_user_id=Subquery(
-                    PartRequestAccess.objects.filter(
-                        part_request=OuterRef("pk"),
-                        status=PartRequestAccess.STATUS_ACCEPTED,
-                    )
-                    .order_by("-updated_at", "-id")
-                    .values("user_id")[:1]
-                )
-            )
-            .prefetch_related(
-                "images",
-                Prefetch(
-                    "access_requests",
-                    queryset=PartRequestAccess.objects.select_related(
-                        "user",
-                        "resolved_by",
-                    ).order_by("-requested_at", "-id"),
-                ),
-            )
-            .order_by("-created_at")
+        is_admin = _is_admin_user(self.request.user)
+        qs = PartRequest.objects.select_related(
+            "requester",
+            "status",
+            "car_model__make",
         )
+        if not is_admin:
+            qs = qs.filter(expires_at__gt=timezone.now())
+
+        qs = qs.annotate(
+            accepted_access_user_id=Subquery(
+                PartRequestAccess.objects.filter(
+                    part_request=OuterRef("pk"),
+                    status=PartRequestAccess.STATUS_ACCEPTED,
+                )
+                .order_by("-updated_at", "-id")
+                .values("user_id")[:1]
+            )
+        ).prefetch_related(
+            "images",
+            Prefetch(
+                "access_requests",
+                queryset=PartRequestAccess.objects.select_related(
+                    "user",
+                    "resolved_by",
+                ).order_by("-requested_at", "-id"),
+            ),
+        ).order_by("-created_at")
 
         city = self.request.query_params.get("city")
         min_price = self.request.query_params.get("min_price")
@@ -516,6 +726,9 @@ class PartRequestViewSet(
             qs = qs.filter(status__code=status_code)
 
         user = getattr(self.request, "user", None)
+        if is_admin:
+            return qs
+
         if user is None or not user.is_authenticated:
             qs = qs.filter(accepted_access_user_id__isnull=True)
         else:
@@ -555,6 +768,8 @@ class PartRequestViewSet(
         )
 
     def _ensure_request_status_manager(self, part_request, validated_data):
+        if _is_admin_user(self.request.user):
+            return None
         if part_request.requester_id == self.request.user.id:
             return None
 
@@ -686,6 +901,10 @@ class PartRequestViewSet(
         )
 
     def perform_destroy(self, instance):
+        if _is_admin_user(self.request.user):
+            self._delete_part_images(list(instance.images.all()))
+            instance.delete()
+            return
         self._ensure_request_owner(instance)
         self._delete_part_images(list(instance.images.all()))
         instance.delete()
@@ -729,6 +948,7 @@ class PartRequestAccessViewSet(
     serializer_class = PartRequestAccessSerializer
 
     def get_queryset(self):
+        is_admin = _is_admin_user(self.request.user)
         queryset = (
             PartRequestAccess.objects.select_related(
                 "part_request",
@@ -744,6 +964,15 @@ class PartRequestAccessViewSet(
             .filter(part_request__expires_at__gt=timezone.now())
             .order_by("-requested_at", "-id")
         )
+        if is_admin:
+            queryset = queryset.model.objects.select_related(
+                "part_request",
+                "part_request__status",
+                "part_request__car_model__make",
+                "user",
+                "resolved_by",
+                "conversation",
+            ).order_by("-requested_at", "-id")
 
         part_request_id = self.request.query_params.get("part_request")
         conversation_id = self.request.query_params.get("conversation")
@@ -871,6 +1100,8 @@ class PartRequestAccessViewSet(
         return Response(response_serializer.data, status=response_status, headers=headers)
 
     def _ensure_owner_can_decide(self, access):
+        if _is_admin_user(self.request.user):
+            return
         if access.part_request.requester_id != self.request.user.id:
             raise PermissionDenied("Only the request owner can review access requests.")
 
@@ -972,22 +1203,28 @@ class ConversationViewSet(
     def get_queryset(self):
         user = self.request.user
         epoch = timezone.make_aware(datetime(1970, 1, 1))
+        is_admin = _is_admin_user(user)
 
         last_read_subquery = ConversationParticipant.objects.filter(
             conversation=OuterRef("pk"), user=user
         ).values("last_read_at")[:1]
 
-        last_message_subquery = (
-            Message.objects.filter(conversation=OuterRef("pk"))
-            .exclude(hidden_for_users__user=user)
-            .annotate(
-                activity_at=Coalesce("server_timestamp", "client_timestamp"),
+        last_message_subquery = Message.objects.filter(conversation=OuterRef("pk"))
+        if not is_admin:
+            last_message_subquery = last_message_subquery.exclude(
+                hidden_for_users__user=user
             )
-            .order_by("-activity_at", "-server_timestamp", "-id", "-client_timestamp")
-        )
+        last_message_subquery = last_message_subquery.annotate(
+            activity_at=Coalesce("server_timestamp", "client_timestamp"),
+        ).order_by("-activity_at", "-server_timestamp", "-id", "-client_timestamp")
 
         qs = (
-            Conversation.objects.filter(participants__user=user)
+            Conversation.objects.all()
+            if is_admin
+            else Conversation.objects.filter(participants__user=user)
+        )
+        qs = (
+            qs
             .annotate(
                 last_read_at=Subquery(last_read_subquery),
                 last_read_at_coalesced=Coalesce(
@@ -1016,7 +1253,7 @@ class ConversationViewSet(
                     "messages",
                     filter=Q(messages__server_timestamp__gt=F("last_read_at_coalesced"))
                     & ~Q(messages__sender=user)
-                    & ~Q(messages__hidden_for_users__user=user),
+                    & (~Q(messages__hidden_for_users__user=user) if not is_admin else Q()),
                     distinct=True,
                 )
             )
@@ -1115,26 +1352,27 @@ class MessageViewSet(
             raise PermissionDenied("You are not a participant in this conversation.")
 
     def get_queryset(self):
-        queryset = (
-            Message.objects.filter(conversation__participants__user=self.request.user)
-            .select_related(
-                "sender",
-                "product",
-                "product__status",
-                "product__car_model__make",
-                "reply_to__sender",
-                "reply_to__product",
-                "reply_to__product__status",
-                "reply_to__product__car_model__make",
+        queryset = Message.objects.all()
+        if not _is_admin_user(self.request.user):
+            queryset = queryset.filter(
+                conversation__participants__user=self.request.user
             )
-            .prefetch_related(
-                "attachments",
-                "statuses__message",
-                "statuses",
-                "reply_to__hidden_for_users",
-            )
-            .distinct()
+        queryset = queryset.select_related(
+            "sender",
+            "product",
+            "product__status",
+            "product__car_model__make",
+            "reply_to__sender",
+            "reply_to__product",
+            "reply_to__product__status",
+            "reply_to__product__car_model__make",
         )
+        queryset = queryset.prefetch_related(
+            "attachments",
+            "statuses__message",
+            "statuses",
+            "reply_to__hidden_for_users",
+        ).distinct()
 
         if self.action == "list":
             conversation_id = self.request.query_params.get("conversation_id")
@@ -1142,9 +1380,12 @@ class MessageViewSet(
                 raise ValidationError({"conversation_id": "conversation_id is required."})
 
             conversation = self._get_conversation()
-            self._ensure_participant(conversation)
+            if not _is_admin_user(self.request.user):
+                self._ensure_participant(conversation)
             queryset = queryset.filter(conversation=conversation).exclude(
                 hidden_for_users__user=self.request.user
+            ) if not _is_admin_user(self.request.user) else queryset.filter(
+                conversation=conversation
             )
 
         return queryset.order_by("client_timestamp", "server_timestamp", "id")
@@ -1235,7 +1476,7 @@ class MessageViewSet(
             raise ValidationError({"scope": "scope must be either 'all' or 'me'."})
 
         if scope == "all":
-            if message.sender_id != request.user.id:
+            if not _is_admin_user(request.user) and message.sender_id != request.user.id:
                 raise PermissionDenied(
                     "You can only delete your own messages for everyone."
                 )
