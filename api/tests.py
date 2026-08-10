@@ -487,6 +487,41 @@ class UsersApiTests(ApiTestCase):
         self.assertEqual(payload["results"][1]["name"], "Alice")
         self.assertEqual(payload["results"][2]["role"], "supplier")
 
+    def test_list_users_can_filter_currently_online_accounts(self):
+        online_user = self.create_user(
+            username="online-user",
+            email="online-user@example.com",
+        )
+        online_supplier = self.create_user(
+            username="online-supplier",
+            email="online-supplier@example.com",
+            role="supplier",
+        )
+        offline_user = self.create_user(
+            username="offline-user",
+            email="offline-user@example.com",
+        )
+        now = timezone.now()
+        ApiUser.objects.filter(pk=online_user.pk).update(chat_last_seen_at=now)
+        ApiUser.objects.filter(pk=online_supplier.pk).update(
+            chat_last_seen_at=now - timedelta(minutes=4),
+        )
+        ApiUser.objects.filter(pk=offline_user.pk).update(
+            chat_last_seen_at=now - timedelta(minutes=6),
+        )
+
+        self.client.force_authenticate(user=online_user)
+        response = self.client.get("/api/users/?status=online")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {online_user.id, online_supplier.id},
+        )
+        self.assertTrue(
+            all(item["is_online"] for item in response.json()["results"])
+        )
+
     def test_retrieve_supplier_profile_includes_phone_and_supported_car_models(self):
         viewer = self.create_user(username="viewer", email="viewer@example.com")
         audi_a4 = self.create_car_model(make_name="Audi", model_name="A4")

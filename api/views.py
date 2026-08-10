@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import zip_longest
 from django.conf import settings
 from django.db import IntegrityError, transaction
@@ -320,6 +320,11 @@ class ApiUserViewSet(
             queryset = queryset.filter(role=role)
         if status_filter == "active":
             queryset = queryset.filter(is_active=True)
+        elif status_filter == "online":
+            queryset = queryset.filter(
+                is_active=True,
+                chat_last_seen_at__gte=timezone.now() - timedelta(minutes=5),
+            )
         elif status_filter == "blocked":
             queryset = queryset.filter(is_active=False, blocked_at__isnull=False)
 

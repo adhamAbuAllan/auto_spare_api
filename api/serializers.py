@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 
 from django.db import IntegrityError, transaction
 from django.contrib.auth.password_validation import validate_password
@@ -70,6 +71,11 @@ class ApiUserSerializer(serializers.ModelSerializer):
         write_only=True,
     )
     is_admin = serializers.SerializerMethodField()
+    is_online = serializers.SerializerMethodField()
+    last_seen_at = serializers.DateTimeField(
+        source="chat_last_seen_at",
+        read_only=True,
+    )
 
     class Meta:
         model = ApiUser
@@ -84,6 +90,8 @@ class ApiUserSerializer(serializers.ModelSerializer):
             "rating",
             "is_active",
             "is_admin",
+            "is_online",
+            "last_seen_at",
             "blocked_at",
             "blocked_reason",
             "supported_car_model_ids",
@@ -102,6 +110,12 @@ class ApiUserSerializer(serializers.ModelSerializer):
 
     def get_is_admin(self, obj):
         return obj.is_admin
+
+    def get_is_online(self, obj):
+        return bool(
+            obj.chat_last_seen_at
+            and obj.chat_last_seen_at >= timezone.now() - timedelta(minutes=5)
+        )
 
     def validate_supported_car_model_ids(self, value):
         model_ids = [int(item) for item in value]
