@@ -707,6 +707,7 @@ class PartRequestViewSet(
         car_model_id = self.request.query_params.get("car_model_id")
         status_id = self.request.query_params.get("status_id")
         status_code = self.request.query_params.get("status_code")
+        all_models = self.request.query_params.get("all_models")
 
         if city:
             qs = qs.filter(city__iexact=city)
@@ -741,7 +742,11 @@ class PartRequestViewSet(
             # Suppliers browse only requests for car models they support.
             # Their own requests and requests already assigned to them remain
             # visible if their supported-model list changes later.
-            if user.role == ApiUser.ROLE_SUPPLIER:
+            if user.role == ApiUser.ROLE_SUPPLIER and all_models not in {
+                "1",
+                "true",
+                "yes",
+            }:
                 qs = qs.filter(
                     Q(car_model__user_links__user_id=user.id)
                     | Q(requester_id=user.id)

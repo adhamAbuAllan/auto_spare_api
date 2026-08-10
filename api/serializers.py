@@ -1,3 +1,5 @@
+import logging
+
 from django.db import IntegrityError, transaction
 from django.contrib.auth.password_validation import validate_password
 from django.utils import timezone
@@ -40,6 +42,9 @@ from .translation import (
     resolve_requested_translation_language,
     stamp_part_request_languages,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_phone_number(value):
@@ -689,10 +694,24 @@ class PartImageSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(url) if request else url
 
     def get_width(self, obj):
-        return obj.image.width if obj.image else None
+        return self._image_dimension(obj, "width")
 
     def get_height(self, obj):
-        return obj.image.height if obj.image else None
+        return self._image_dimension(obj, "height")
+
+    def _image_dimension(self, obj, dimension):
+        if not obj.image:
+            return None
+        try:
+            return getattr(obj.image, dimension)
+        except (FileNotFoundError, OSError, ValueError) as exc:
+            logger.warning(
+                "Unable to read missing or invalid part image %s for request %s: %s",
+                obj.pk,
+                obj.part_request_id,
+                exc,
+            )
+            return None
 
 
 class ConversationSerializer(serializers.ModelSerializer):

@@ -934,6 +934,38 @@ class PartRequestApiTests(ApiTestCase):
             {audi_request.id, bmw_request.id},
         )
 
+    def test_supplier_can_list_all_car_models_when_requested(self):
+        supplier = self.create_user(
+            username="all-models-supplier",
+            email="all-models-supplier@example.com",
+            role="supplier",
+        )
+        owner = self.create_user(username="all-models-owner", email="all-models-owner@example.com")
+        supported_model = self.create_car_model(make_name="Audi", model_name="A4")
+        other_model = self.create_car_model(make_name="Toyota", model_name="Camry")
+        UserCarModel.objects.create(user=supplier, car_model=supported_model)
+        supported_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Audi headlight",
+            status=self.status,
+            car_model=supported_model,
+        )
+        other_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Toyota bumper",
+            status=self.status,
+            car_model=other_model,
+        )
+
+        self.client.force_authenticate(user=supplier)
+        response = self.client.get("/api/part-requests/?all_models=true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {supported_request.id, other_request.id},
+        )
+
     def test_create_part_request_accepts_null_city(self):
         response = self.client.post(
             "/api/part-requests/",
@@ -995,6 +1027,26 @@ class PartRequestApiTests(ApiTestCase):
             with Image.open(thumbnail_file) as thumbnail:
                 self.assertLessEqual(thumbnail.width, 600)
                 self.assertLessEqual(thumbnail.height, 600)
+
+    def test_part_request_list_skips_missing_image_dimensions(self):
+        car_model = self.create_car_model()
+        part_request = PartRequest.objects.create(
+            requester=self.user,
+            title="Request with missing image",
+            status=self.status,
+            car_model=car_model,
+        )
+        PartImage.objects.create(
+            part_request=part_request,
+            image="part_requests/missing-image.jpg",
+        )
+
+        response = self.client.get("/api/part-requests/")
+
+        self.assertEqual(response.status_code, 200)
+        image_payload = response.json()["results"][0]["images"][0]
+        self.assertIsNone(image_payload["width"])
+        self.assertIsNone(image_payload["height"])
 
     def test_create_part_request_triggers_request_created_push_notifications(self):
         with patch("api.views.send_request_created_push_notifications") as push_mock:
