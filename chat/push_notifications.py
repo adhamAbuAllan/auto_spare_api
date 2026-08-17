@@ -317,7 +317,6 @@ def _send_request_notification_to_devices(
                 body=body,
                 data=data,
                 channel_id=settings.FCM_ANDROID_ACTIVITY_CHANNEL_ID,
-                badge=unread_count,
             )
         )
     return results

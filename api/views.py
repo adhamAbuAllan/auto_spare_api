@@ -81,6 +81,7 @@ from .translation import (
     localize_message_response_data,
     localize_part_request_response_data,
     resolve_requested_translation_language,
+    translate_car_model_search_query,
 )
 from chat.broadcasting import (
     broadcast_chat_event,
@@ -118,6 +119,13 @@ def _is_admin_user(user):
 def _ensure_admin_user(user):
     if not _is_admin_user(user):
         raise PermissionDenied("Only admin users can perform this action.")
+
+
+def _can_view_all_chats(user):
+    return bool(
+        _is_admin_user(user)
+        and getattr(user, "admin_can_view_all_chats", False)
+    )
 
 
 def create_and_broadcast_system_chat_message(*, conversation_id, sender, text):
@@ -584,19 +592,33 @@ class CarModelViewSet(
             queryset = queryset.filter(make__slug=make_slug)
 
         if search:
-            terms = [term for term in search.split() if term]
-            for term in terms:
-                queryset = queryset.filter(
-                    Q(name__icontains=term)
-                    | Q(make__name__icontains=term)
-                    | Q(slug__icontains=term)
+            translated_search = translate_car_model_search_query(search)
+            search_queries = [search]
+            if translated_search.casefold() != search.casefold():
+                search_queries.append(translated_search)
+
+            query_filter = Q()
+            starts_with_rank = Q()
+            for search_query in search_queries:
+                terms = [term for term in search_query.split() if term]
+                if not terms:
+                    continue
+
+                term_filter = Q()
+                for term in terms:
+                    term_filter &= (
+                        Q(name__icontains=term)
+                        | Q(make__name__icontains=term)
+                        | Q(slug__icontains=term)
+                    )
+                query_filter |= term_filter
+                starts_with_rank |= (
+                    Q(name__istartswith=search_query)
+                    | Q(make__name__istartswith=search_query)
+                    | Q(slug__istartswith=search_query)
                 )
 
-            starts_with_rank = (
-                Q(name__istartswith=search)
-                | Q(make__name__istartswith=search)
-                | Q(slug__istartswith=search)
-            )
+            queryset = queryset.filter(query_filter)
             queryset = queryset.annotate(
                 match_rank=Case(
                     When(starts_with_rank, then=Value(0)),
@@ -1213,14 +1235,14 @@ class ConversationViewSet(
     def get_queryset(self):
         user = self.request.user
         epoch = timezone.make_aware(datetime(1970, 1, 1))
-        is_admin = _is_admin_user(user)
+        can_view_all_chats = _can_view_all_chats(user)
 
         last_read_subquery = ConversationParticipant.objects.filter(
             conversation=OuterRef("pk"), user=user
         ).values("last_read_at")[:1]
 
         last_message_subquery = Message.objects.filter(conversation=OuterRef("pk"))
-        if not is_admin:
+        if not can_view_all_chats:
             last_message_subquery = last_message_subquery.exclude(
                 hidden_for_users__user=user
             )
@@ -1230,7 +1252,7 @@ class ConversationViewSet(
 
         qs = (
             Conversation.objects.all()
-            if is_admin
+            if can_view_all_chats
             else Conversation.objects.filter(participants__user=user)
         )
         qs = (
@@ -1263,7 +1285,11 @@ class ConversationViewSet(
                     "messages",
                     filter=Q(messages__server_timestamp__gt=F("last_read_at_coalesced"))
                     & ~Q(messages__sender=user)
-                    & (~Q(messages__hidden_for_users__user=user) if not is_admin else Q()),
+                    & (
+                        ~Q(messages__hidden_for_users__user=user)
+                        if not can_view_all_chats
+                        else Q()
+                    ),
                     distinct=True,
                 )
             )
@@ -1363,7 +1389,8 @@ class MessageViewSet(
 
     def get_queryset(self):
         queryset = Message.objects.all()
-        if not _is_admin_user(self.request.user):
+        can_view_all_chats = _can_view_all_chats(self.request.user)
+        if not can_view_all_chats:
             queryset = queryset.filter(
                 conversation__participants__user=self.request.user
             )
@@ -1390,11 +1417,11 @@ class MessageViewSet(
                 raise ValidationError({"conversation_id": "conversation_id is required."})
 
             conversation = self._get_conversation()
-            if not _is_admin_user(self.request.user):
+            if not can_view_all_chats:
                 self._ensure_participant(conversation)
             queryset = queryset.filter(conversation=conversation).exclude(
                 hidden_for_users__user=self.request.user
-            ) if not _is_admin_user(self.request.user) else queryset.filter(
+            ) if not can_view_all_chats else queryset.filter(
                 conversation=conversation
             )
 
@@ -1486,7 +1513,10 @@ class MessageViewSet(
             raise ValidationError({"scope": "scope must be either 'all' or 'me'."})
 
         if scope == "all":
-            if not _is_admin_user(request.user) and message.sender_id != request.user.id:
+            if (
+                not _can_view_all_chats(request.user)
+                and message.sender_id != request.user.id
+            ):
                 raise PermissionDenied(
                     "You can only delete your own messages for everyone."
                 )

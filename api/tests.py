@@ -784,6 +784,20 @@ class CarCatalogApiTests(ApiTestCase):
         self.assertEqual(payload["count"], 1)
         self.assertEqual(payload["results"][0]["display_name"], "Brand Alpha RS Seven")
 
+    def test_search_car_models_uses_translation_for_non_english_queries(self):
+        self.create_car_model(make_name="Audi", model_name="RS 6")
+
+        with patch(
+            "api.views.translate_car_model_search_query",
+            return_value="Audi RS 6",
+        ) as translate_search:
+            response = self.client.get("/api/car-models/?search=اودي ار اس 6")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["count"], 1)
+        self.assertEqual(response.json()["results"][0]["display_name"], "Audi RS 6")
+        translate_search.assert_called_once_with("اودي ار اس 6")
+
 
 class PartRequestApiTests(ApiTestCase):
     def setUp(self):
@@ -796,6 +810,25 @@ class PartRequestApiTests(ApiTestCase):
                 "is_terminal": False,
             },
         )
+
+    def test_create_part_request_with_only_car_model_rejects_empty_details(self):
+        car_model = self.create_car_model()
+
+        response = self.client.post(
+            "/api/part-requests/",
+            data={
+                "status": self.status.id,
+                "car_model": car_model.id,
+            },
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(
+            response.json()["detail"][0],
+            "No request data has been entered.",
+        )
+        self.assertEqual(PartRequest.objects.count(), 0)
 
     def test_create_and_list_part_request(self):
         create_response = self.client.post(

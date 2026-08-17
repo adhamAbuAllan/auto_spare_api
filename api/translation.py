@@ -244,6 +244,39 @@ def detect_source_language(text):
     return _heuristic_detect_language(normalized_text)
 
 
+@lru_cache(maxsize=512)
+def translate_car_model_search_query(value):
+    """Return an English search fallback for a car make or model query.
+
+    Car catalogue names are stored in English. Translating only non-English
+    queries lets people search the same catalogue in their own language while
+    keeping the original query available to callers as a fallback.
+    """
+    text = str(value or "").strip()
+    source_language = detect_source_language(text)
+    if not text or source_language in (None, "en"):
+        return text
+
+    provider = get_translation_provider()
+    if provider is None:
+        return text
+
+    try:
+        translations = provider.translate_texts(
+            texts=[text],
+            source_language=source_language,
+            target_language="en",
+        )
+    except Exception as exc:  # pragma: no cover - depends on provider runtime
+        logger.warning("Car model search translation failed: %s", exc)
+        return text
+
+    if not translations:
+        return text
+    translated_text = str(translations[0].translated_text or "").strip()
+    return translated_text or text
+
+
 def stamp_part_request_languages(part_request):
     part_request.title_language = detect_source_language(part_request.title) or ""
     part_request.description_language = (

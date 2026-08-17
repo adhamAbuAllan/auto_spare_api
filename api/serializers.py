@@ -71,6 +71,7 @@ class ApiUserSerializer(serializers.ModelSerializer):
         write_only=True,
     )
     is_admin = serializers.SerializerMethodField()
+    can_view_all_chats = serializers.SerializerMethodField()
     is_online = serializers.SerializerMethodField()
     last_seen_at = serializers.DateTimeField(
         source="chat_last_seen_at",
@@ -90,6 +91,7 @@ class ApiUserSerializer(serializers.ModelSerializer):
             "rating",
             "is_active",
             "is_admin",
+            "can_view_all_chats",
             "is_online",
             "last_seen_at",
             "blocked_at",
@@ -102,6 +104,7 @@ class ApiUserSerializer(serializers.ModelSerializer):
             "id",
             "is_active",
             "is_admin",
+            "can_view_all_chats",
             "blocked_at",
             "blocked_reason",
             "phone_verified_at",
@@ -110,6 +113,9 @@ class ApiUserSerializer(serializers.ModelSerializer):
 
     def get_is_admin(self, obj):
         return obj.is_admin
+
+    def get_can_view_all_chats(self, obj):
+        return obj.can_view_all_chats
 
     def get_is_online(self, obj):
         return bool(
@@ -419,6 +425,10 @@ class PartRequestStatusSerializer(serializers.ModelSerializer):
 
 
 class PartRequestSerializer(serializers.ModelSerializer):
+    # Keep title validation in validate() so an otherwise empty form can return
+    # one clear, user-facing message instead of a generic field error.
+    title = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(required=False, allow_blank=True)
     car_model = serializers.PrimaryKeyRelatedField(
         queryset=CarModel.objects.filter(is_active=True),
         required=False,
@@ -514,6 +524,30 @@ class PartRequestSerializer(serializers.ModelSerializer):
 
     def validate(self, attrs):
         attrs = super().validate(attrs)
+        title = str(attrs.get("title") or "").strip()
+        description = str(attrs.get("description") or "").strip()
+
+        if self.instance is None:
+            if not title and not description:
+                raise serializers.ValidationError(
+                    {
+                        "detail": "No request data has been entered."
+                    }
+                )
+            if not title:
+                raise serializers.ValidationError(
+                    {"title": "Enter a title before creating the request."}
+                )
+        elif "title" in attrs and not title:
+            raise serializers.ValidationError(
+                {"title": "Enter a title before saving the request."}
+            )
+
+        if "title" in attrs:
+            attrs["title"] = title
+        if "description" in attrs:
+            attrs["description"] = description
+
         raw_make_name = attrs.pop("car_make_name", None)
         raw_model_name = attrs.pop("car_model_name", None)
         car_make_name = str(raw_make_name or "").strip()
@@ -1152,6 +1186,7 @@ class MeSerializer(ApiUserSerializer):
             "rating",
             "is_active",
             "is_admin",
+            "can_view_all_chats",
             "blocked_at",
             "blocked_reason",
             "chat_push_enabled",
@@ -1168,6 +1203,7 @@ class MeSerializer(ApiUserSerializer):
             "rating",
             "is_active",
             "is_admin",
+            "can_view_all_chats",
             "blocked_at",
             "blocked_reason",
             "created_at",

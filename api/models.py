@@ -72,6 +72,7 @@ class ApiUser(AbstractBaseUser, PermissionsMixin):
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_USER)
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
     is_staff = models.BooleanField(default=False)
+    admin_can_view_all_chats = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     chat_push_enabled = models.BooleanField(default=True)
     chat_message_preview_enabled = models.BooleanField(default=True)
@@ -100,6 +101,10 @@ class ApiUser(AbstractBaseUser, PermissionsMixin):
     @property
     def is_admin(self):
         return bool(self.is_staff or self.is_superuser)
+
+    @property
+    def can_view_all_chats(self):
+        return bool(self.is_admin and self.admin_can_view_all_chats)
 
     @property
     def is_blocked(self):

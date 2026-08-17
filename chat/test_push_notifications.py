@@ -322,6 +322,7 @@ class ChatPushNotificationTests(TestCase):
         for kwargs in payloads_by_device.values():
             self.assertEqual(kwargs["channel_id"], "chat_activity")
             self.assertEqual(kwargs["data"]["requester_id"], self.sender.id)
+            self.assertNotIn("badge", kwargs)
 
     def test_request_created_push_only_targets_suppliers_with_matching_car_model(self):
         UserCarModel.objects.filter(
