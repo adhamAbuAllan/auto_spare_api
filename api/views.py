@@ -135,6 +135,14 @@ def _can_view_all_part_requests(user):
     )
 
 
+def _browses_as_supplier(user):
+    return bool(
+        user
+        and getattr(user, "is_authenticated", False)
+        and getattr(user, "role", None) == ApiUser.ROLE_SUPPLIER
+    )
+
+
 def create_and_broadcast_system_chat_message(*, conversation_id, sender, text):
     delivered_user_ids = get_default_delivered_user_ids(conversation_id) - {sender.id}
     payload, status_events = create_message_with_statuses(
@@ -704,14 +712,27 @@ class PartRequestViewSet(
         return response
 
     def get_queryset(self):
-        can_view_all_part_requests = _can_view_all_part_requests(self.request.user)
+        user = getattr(self.request, "user", None)
+        # One endpoint serves both the marketplace feed and the admin panel.
+        # An admin who is also a supplier browses the marketplace as a
+        # supplier, so the admin override only applies where the caller asks
+        # for it. A non-supplier admin keeps the override everywhere, which
+        # leaves existing admin clients unchanged.
+        wants_admin_scope = (
+            str(self.request.query_params.get("scope") or "").strip().lower()
+            == "admin"
+        )
+        can_view_all_part_requests = _can_view_all_part_requests(user) and (
+            wants_admin_scope or not _browses_as_supplier(user)
+        )
         qs = PartRequest.objects.select_related(
             "requester",
             "status",
             "car_model__make",
         )
-        if not can_view_all_part_requests:
-            qs = qs.filter(expires_at__gt=timezone.now())
+        # A request only lives for PART_REQUEST_LIFETIME. Once it is over it is
+        # over for admins too, so this window applies to everyone.
+        qs = qs.filter(expires_at__gt=timezone.now())
 
         qs = qs.annotate(
             accepted_access_user_id=Subquery(
@@ -760,7 +781,6 @@ class PartRequestViewSet(
         if status_code:
             qs = qs.filter(status__code=status_code)
 
-        user = getattr(self.request, "user", None)
         if can_view_all_part_requests:
             return qs
 

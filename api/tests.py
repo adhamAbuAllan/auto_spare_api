@@ -1034,6 +1034,214 @@ class PartRequestApiTests(ApiTestCase):
             {supported_request.id, other_request.id},
         )
 
+    def test_admin_supplier_lists_only_supported_car_models(self):
+        """An admin who is also a supplier browses as a supplier."""
+        admin_supplier = self.create_user(
+            name="Admin Supplier",
+            role="supplier",
+            is_staff=True,
+        )
+        owner = self.create_user(name="Request Owner")
+        supported_model = self.create_car_model(make_name="Audi", model_name="A4")
+        other_model = self.create_car_model(make_name="Toyota", model_name="Camry")
+        UserCarModel.objects.create(user=admin_supplier, car_model=supported_model)
+        supported_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Audi headlight",
+            status=self.status,
+            car_model=supported_model,
+        )
+        PartRequest.objects.create(
+            requester=owner,
+            title="Need Toyota bumper",
+            status=self.status,
+            car_model=other_model,
+        )
+
+        self.client.force_authenticate(user=admin_supplier)
+        response = self.client.get("/api/part-requests/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {supported_request.id},
+        )
+
+    def test_admin_supplier_can_still_list_every_car_model(self):
+        admin_supplier = self.create_user(
+            name="Admin Supplier All",
+            role="supplier",
+            is_staff=True,
+        )
+        owner = self.create_user(name="Request Owner All")
+        supported_model = self.create_car_model(make_name="Audi", model_name="A6")
+        other_model = self.create_car_model(make_name="Toyota", model_name="Corolla")
+        UserCarModel.objects.create(user=admin_supplier, car_model=supported_model)
+        supported_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Audi mirror",
+            status=self.status,
+            car_model=supported_model,
+        )
+        other_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Toyota mirror",
+            status=self.status,
+            car_model=other_model,
+        )
+
+        self.client.force_authenticate(user=admin_supplier)
+        response = self.client.get("/api/part-requests/?all_models=true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {supported_request.id, other_request.id},
+        )
+
+    def test_admin_supplier_does_not_see_expired_requests(self):
+        admin_supplier = self.create_user(
+            name="Admin Supplier Expiry",
+            role="supplier",
+            is_staff=True,
+        )
+        owner = self.create_user(name="Request Owner Expiry")
+        model = self.create_car_model(make_name="Audi", model_name="Q7")
+        UserCarModel.objects.create(user=admin_supplier, car_model=model)
+        live_request = PartRequest.objects.create(
+            requester=owner,
+            title="Still open",
+            status=self.status,
+            car_model=model,
+        )
+        PartRequest.objects.create(
+            requester=owner,
+            title="Past its 48 hours",
+            status=self.status,
+            car_model=model,
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        self.client.force_authenticate(user=admin_supplier)
+        response = self.client.get("/api/part-requests/?all_models=true")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {live_request.id},
+        )
+
+    def test_admin_does_not_see_expired_requests(self):
+        """The 48-hour window closes a request for admins too."""
+        admin = self.create_user(name="Plain Admin", is_staff=True)
+        owner = self.create_user(name="Request Owner Admin")
+        live_request = PartRequest.objects.create(
+            requester=owner,
+            title="Still open for the admin",
+            status=self.status,
+        )
+        PartRequest.objects.create(
+            requester=owner,
+            title="Expired for the admin",
+            status=self.status,
+            expires_at=timezone.now() - timedelta(seconds=1),
+        )
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get("/api/part-requests/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {live_request.id},
+        )
+
+    def test_admin_who_is_not_a_supplier_still_sees_granted_requests(self):
+        """The admin override still widens moderation for a non-supplier admin."""
+        admin = self.create_user(name="Moderating Admin", is_staff=True)
+        owner = self.create_user(name="Granted Owner")
+        granted_supplier = self.create_user(name="Granted Supplier", role="supplier")
+        granted_request = PartRequest.objects.create(
+            requester=owner,
+            title="Already handled by another supplier",
+            status=self.status,
+        )
+        PartRequestAccess.objects.create(
+            part_request=granted_request,
+            user=granted_supplier,
+            status=PartRequestAccess.STATUS_ACCEPTED,
+        )
+
+        self.client.force_authenticate(user=admin)
+        response = self.client.get("/api/part-requests/")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(
+            granted_request.id,
+            {item["id"] for item in response.json()["results"]},
+        )
+
+    def test_admin_supplier_keeps_full_access_in_the_admin_scope(self):
+        """The admin panel asks for the override explicitly."""
+        admin_supplier = self.create_user(
+            name="Admin Supplier Scope",
+            role="supplier",
+            is_staff=True,
+        )
+        owner = self.create_user(name="Request Owner Scope")
+        supported_model = self.create_car_model(make_name="Audi", model_name="A8")
+        other_model = self.create_car_model(make_name="Toyota", model_name="Yaris")
+        UserCarModel.objects.create(user=admin_supplier, car_model=supported_model)
+        supported_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Audi door",
+            status=self.status,
+            car_model=supported_model,
+        )
+        other_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Toyota door",
+            status=self.status,
+            car_model=other_model,
+        )
+
+        self.client.force_authenticate(user=admin_supplier)
+        response = self.client.get("/api/part-requests/?scope=admin")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {supported_request.id, other_request.id},
+        )
+
+    def test_admin_scope_does_not_promote_a_plain_supplier(self):
+        supplier = self.create_user(name="Plain Supplier Scope", role="supplier")
+        owner = self.create_user(name="Request Owner Plain")
+        supported_model = self.create_car_model(make_name="Audi", model_name="Q3")
+        other_model = self.create_car_model(make_name="Toyota", model_name="Hilux")
+        UserCarModel.objects.create(user=supplier, car_model=supported_model)
+        supported_request = PartRequest.objects.create(
+            requester=owner,
+            title="Need Audi wheel",
+            status=self.status,
+            car_model=supported_model,
+        )
+        PartRequest.objects.create(
+            requester=owner,
+            title="Need Toyota wheel",
+            status=self.status,
+            car_model=other_model,
+        )
+
+        self.client.force_authenticate(user=supplier)
+        response = self.client.get("/api/part-requests/?scope=admin")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            {item["id"] for item in response.json()["results"]},
+            {supported_request.id},
+        )
+
     def test_create_part_request_accepts_null_city(self):
         response = self.client.post(
             "/api/part-requests/",
