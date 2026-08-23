@@ -73,6 +73,7 @@ class ApiUser(AbstractBaseUser, PermissionsMixin):
     rating = models.DecimalField(max_digits=3, decimal_places=2, null=True, blank=True)
     is_staff = models.BooleanField(default=False)
     admin_can_view_all_chats = models.BooleanField(default=True)
+    admin_can_view_all_part_requests = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     chat_push_enabled = models.BooleanField(default=True)
     chat_message_preview_enabled = models.BooleanField(default=True)

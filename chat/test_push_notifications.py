@@ -18,6 +18,7 @@ from api.models import (
 )
 
 from .push_notifications import (
+    _build_apns_config,
     _send_fcm_message,
     send_chat_message_push_notifications,
     send_message_status_push_notifications,
@@ -373,6 +374,63 @@ class ChatPushNotificationTests(TestCase):
             "projects/demo/messages/123",
         )
         dispatch_mock.assert_called_once()
+
+    def test_apns_alert_groups_a_conversation_into_one_thread(self):
+        """iOS shows the APNS alert itself, so grouping is requested here."""
+        with (
+            patch(
+                "chat.push_notifications.messaging.Aps",
+                side_effect=lambda **kwargs: {"aps": kwargs},
+            ) as aps_mock,
+            patch(
+                "chat.push_notifications.messaging.ApsAlert",
+                side_effect=lambda **kwargs: {"aps_alert": kwargs},
+            ),
+            patch(
+                "chat.push_notifications.messaging.APNSPayload",
+                side_effect=lambda **kwargs: {"apns_payload": kwargs},
+            ),
+            patch(
+                "chat.push_notifications.messaging.APNSConfig",
+                side_effect=lambda **kwargs: kwargs,
+            ) as apns_config_mock,
+        ):
+            _build_apns_config(
+                title="Seller User",
+                body="Sent you a new message.",
+                badge=3,
+                thread_id="chat-7",
+            )
+
+        self.assertEqual(aps_mock.call_args.kwargs["thread_id"], "chat-7")
+        self.assertEqual(aps_mock.call_args.kwargs["badge"], 3)
+        self.assertEqual(
+            apns_config_mock.call_args.kwargs["headers"]["apns-push-type"],
+            "alert",
+        )
+
+    def test_apns_alert_without_a_thread_omits_the_grouping_key(self):
+        with (
+            patch(
+                "chat.push_notifications.messaging.Aps",
+                side_effect=lambda **kwargs: {"aps": kwargs},
+            ) as aps_mock,
+            patch(
+                "chat.push_notifications.messaging.ApsAlert",
+                side_effect=lambda **kwargs: {"aps_alert": kwargs},
+            ),
+            patch(
+                "chat.push_notifications.messaging.APNSPayload",
+                side_effect=lambda **kwargs: {"apns_payload": kwargs},
+            ),
+            patch(
+                "chat.push_notifications.messaging.APNSConfig",
+                side_effect=lambda **kwargs: kwargs,
+            ),
+        ):
+            _build_apns_config(title="Seller User", body="Hello")
+
+        self.assertNotIn("thread_id", aps_mock.call_args.kwargs)
 
     def test_fcm_message_includes_high_priority_android_and_apns_alert(self):
         with (

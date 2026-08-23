@@ -128,6 +128,13 @@ def _can_view_all_chats(user):
     )
 
 
+def _can_view_all_part_requests(user):
+    return bool(
+        _is_admin_user(user)
+        and getattr(user, "admin_can_view_all_part_requests", False)
+    )
+
+
 def create_and_broadcast_system_chat_message(*, conversation_id, sender, text):
     delivered_user_ids = get_default_delivered_user_ids(conversation_id) - {sender.id}
     payload, status_events = create_message_with_statuses(
@@ -697,13 +704,13 @@ class PartRequestViewSet(
         return response
 
     def get_queryset(self):
-        is_admin = _is_admin_user(self.request.user)
+        can_view_all_part_requests = _can_view_all_part_requests(self.request.user)
         qs = PartRequest.objects.select_related(
             "requester",
             "status",
             "car_model__make",
         )
-        if not is_admin:
+        if not can_view_all_part_requests:
             qs = qs.filter(expires_at__gt=timezone.now())
 
         qs = qs.annotate(
@@ -754,7 +761,7 @@ class PartRequestViewSet(
             qs = qs.filter(status__code=status_code)
 
         user = getattr(self.request, "user", None)
-        if is_admin:
+        if can_view_all_part_requests:
             return qs
 
         if user is None or not user.is_authenticated:

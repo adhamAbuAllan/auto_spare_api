@@ -140,20 +140,26 @@ def _stringify_data(data):
     return payload
 
 
-def _build_apns_config(*, title, body, badge=None):
+def _build_apns_config(*, title, body, badge=None, thread_id=None):
     if messaging is None:
         return None
-    
+
     aps_kwargs = {
         "alert": messaging.ApsAlert(title=title, body=body),
         "sound": "default",
     }
     if badge is not None:
         aps_kwargs["badge"] = badge
+    if thread_id:
+        # iOS renders the APNS alert itself, so grouping every message of a
+        # conversation under one thread has to be requested here. Without it
+        # each message shows as an unrelated notification.
+        aps_kwargs["thread_id"] = str(thread_id)
 
     return messaging.APNSConfig(
         headers={
             "apns-priority": "10",
+            "apns-push-type": "alert",
         },
         payload=messaging.APNSPayload(
             aps=messaging.Aps(**aps_kwargs),
@@ -161,9 +167,13 @@ def _build_apns_config(*, title, body, badge=None):
     )
 
 
-def _send_fcm_message(*, token, title, body, data, channel_id, app, badge=None):
+def _send_fcm_message(
+    *, token, title, body, data, channel_id, app, badge=None, thread_id=None
+):
     android_config = messaging.AndroidConfig(priority="high")
-    apns_config = _build_apns_config(title=title, body=body, badge=badge)
+    apns_config = _build_apns_config(
+        title=title, body=body, badge=badge, thread_id=thread_id
+    )
     message = messaging.Message(
         token=token,
         data=_stringify_data(data),
@@ -190,7 +200,9 @@ def _is_sent_dispatch_result(result):
     return bool(result)
 
 
-def _dispatch_notification(*, device, title, body, data, channel_id, badge=None):
+def _dispatch_notification(
+    *, device, title, body, data, channel_id, badge=None, thread_id=None
+):
     app = _get_firebase_app()
     base_result = _base_dispatch_result(device=device, channel_id=channel_id)
     if app is None:
@@ -220,6 +232,7 @@ def _dispatch_notification(*, device, title, body, data, channel_id, badge=None)
             channel_id=channel_id,
             app=app,
             badge=badge,
+            thread_id=thread_id,
         )
         logger.info(
             "Sent chat push notification to user %s device %s on channel %s.",
@@ -317,6 +330,7 @@ def _send_request_notification_to_devices(
                 body=body,
                 data=data,
                 channel_id=settings.FCM_ANDROID_ACTIVITY_CHANNEL_ID,
+                thread_id=f"request-{request_id}",
             )
         )
     return results
@@ -390,6 +404,7 @@ def send_chat_message_push_notifications(message_payload):
                     data=data,
                     channel_id=settings.FCM_ANDROID_MESSAGE_CHANNEL_ID,
                     badge=unread_count,
+                    thread_id=f"chat-{conversation_id}",
                 )
             ):
                 sent_count += 1
